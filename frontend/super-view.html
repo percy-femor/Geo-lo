@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Geo-Lo • Super Admin</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0b1020;
+            --surface: #111827;
+            --muted: #94a3b8;
+            --text: #e5e7eb;
+            --primary: #f59e0b;
+            --primary-press: #d97706;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --info: #22d3ee;
+            --card: rgba(17, 24, 39, 0.78);
+            --border: 1px solid rgba(148, 163, 184, 0.16);
+            --shadow: 0 20px 40px rgba(2, 6, 23, 0.45);
+            --radius: 18px;
+            --sidebar-w: 268px;
+            --ease: cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        body.light {
+            --bg: #f6f7fb;
+            --surface: #ffffff;
+            --muted: #64748b;
+            --text: #0f172a;
+            --primary: #d97706;
+            --primary-press: #b45309;
+            --success: #16a34a;
+            --danger: #dc2626;
+            --warning: #d97706;
+            --info: #0891b2;
+            --card: rgba(255, 255, 255, 0.86);
+            --border: 1px solid rgba(100, 116, 139, 0.16);
+            --shadow: 0 16px 36px rgba(15, 23, 42, 0.08);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { height: 100%; }
+
+        body.admin-pending .app-shell,
+        body.admin-pending .overlay,
+        body.admin-pending .toast-stack,
+        body.admin-pending .modal-backdrop { display: none !important; }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            background:
+                radial-gradient(1100px 560px at 8% -10%, #78350f 0%, transparent 50%),
+                radial-gradient(900px 480px at 100% 0%, #1e1b4b 0%, transparent 42%),
+                radial-gradient(800px 500px at 80% 110%, #7c2d12 0%, transparent 46%),
+                var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        body.light {
+            background:
+                radial-gradient(1100px 560px at 8% -10%, #fde68a 0%, transparent 50%),
+                radial-gradient(900px 480px at 100% 0%, #c7d2fe 0%, transparent 42%),
+                var(--bg);
+        }
+
+        button, input, select, textarea { font-family: inherit; }
+
+        .app-shell { min-height: 100vh; }
+
+        .sidebar {
+            width: var(--sidebar-w);
+            height: 100vh;
+            position: fixed;
+            inset: 0 auto 0 0;
+            padding: 20px 14px;
+            background: var(--card);
+            border-right: var(--border);
+            backdrop-filter: blur(18px);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            transform: translateX(0);
+            transition: transform 0.4s var(--ease);
+        }
+
+        .sidebar-header {
+            padding: 10px 12px 22px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .brand-mark {
+            width: 42px;
+            height: 42px;
+            border-radius: 14px;
+            display: grid;
+            place-items: center;
+            background: linear-gradient(135deg, #f59e0b, #ef4444);
+            color: #fff;
+            font-weight: 700;
+            box-shadow: 0 8px 20px rgba(245, 158, 11, 0.35);
+        }
+
+        .brand-text h2 { font-size: 1.05rem; font-weight: 700; }
+        .brand-text p { font-size: 0.72rem; color: var(--muted); font-weight: 500; }
+
+        .sidebar-menu { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+
+        .menu-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 14px;
+            border-radius: 14px;
+            cursor: pointer;
+            color: var(--muted);
+            font-weight: 500;
+            position: relative;
+            overflow: hidden;
+            transition: background 0.25s var(--ease), color 0.25s var(--ease), transform 0.25s var(--ease);
+        }
+
+        .menu-item svg { width: 18px; height: 18px; flex-shrink: 0; }
+        .menu-item:hover { background: rgba(245, 158, 11, 0.12); color: var(--text); transform: translateX(3px); }
+        .menu-item.active {
+            background: linear-gradient(90deg, rgba(245, 158, 11, 0.22), rgba(245, 158, 11, 0.06));
+            color: var(--text);
+            box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.28);
+        }
+        .menu-item.active::before {
+            content: '';
+            position: absolute;
+            left: 0; top: 10px; bottom: 10px;
+            width: 3px; border-radius: 99px; background: var(--primary);
+        }
+
+        .sidebar-footer { margin-top: auto; padding: 12px; color: var(--muted); font-size: 0.75rem; }
+
+        .overlay {
+            display: none; position: fixed; inset: 0;
+            background: rgba(2, 6, 23, 0.55); z-index: 900; opacity: 0;
+            transition: opacity 0.3s var(--ease);
+        }
+        .overlay.show { display: block; opacity: 1; }
+
+        .main-content { margin-left: var(--sidebar-w); padding: 24px; min-height: 100vh; }
+
+        .header {
+            background: var(--card); border: var(--border); border-radius: var(--radius);
+            box-shadow: var(--shadow); padding: 18px 22px; margin-bottom: 24px;
+            display: flex; justify-content: space-between; align-items: center; gap: 16px;
+            flex-wrap: wrap;
+            backdrop-filter: blur(16px);
+        }
+
+        .header-left { display: flex; align-items: center; gap: 12px; }
+        .menu-toggle {
+            display: none; width: 42px; height: 42px; border: var(--border);
+            background: rgba(255, 255, 255, 0.04); color: var(--text);
+            border-radius: 12px; cursor: pointer;
+        }
+        .header h1 { font-size: 1.35rem; font-weight: 650; }
+        .header-sub { color: var(--muted); font-size: 0.8rem; margin-top: 2px; }
+        .header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+        .chip, .toggle, .nav-link {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 8px 12px; border-radius: 999px;
+            background: rgba(245, 158, 11, 0.12); border: var(--border);
+            color: var(--text); font-size: 0.8rem; font-weight: 500;
+            text-decoration: none;
+        }
+        .toggle, .nav-link { cursor: pointer; }
+        .toggle:hover, .nav-link:hover { background: rgba(245, 158, 11, 0.2); }
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; animation: fadeUp 0.45s var(--ease) forwards; }
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .card {
+            background: var(--card); border: var(--border); border-radius: var(--radius);
+            box-shadow: var(--shadow); margin-bottom: 22px; overflow: hidden;
+            backdrop-filter: blur(16px);
+        }
+        .card-header {
+            padding: 18px 22px; border-bottom: var(--border);
+            display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap;
+        }
+        .card-header h3 { font-size: 1.02rem; font-weight: 600; }
+        .card-header p { color: var(--muted); font-size: 0.82rem; margin-top: 4px; }
+        .card-body { padding: 22px; }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px; margin-bottom: 22px;
+        }
+        .stat-card {
+            background: var(--card); border: var(--border); border-radius: var(--radius);
+            box-shadow: var(--shadow); padding: 20px; display: flex; align-items: center; gap: 16px;
+            transition: transform 0.3s var(--ease);
+        }
+        .stat-card:hover { transform: translateY(-4px); }
+        .stat-icon {
+            width: 48px; height: 48px; border-radius: 14px;
+            display: grid; place-items: center; flex-shrink: 0; color: #fff;
+        }
+        .stat-icon svg { width: 22px; height: 22px; }
+        .stat-icon.amber { background: linear-gradient(135deg, #f59e0b, #d97706); }
+        .stat-icon.indigo { background: linear-gradient(135deg, #6366f1, #4f46e5); }
+        .stat-icon.emerald { background: linear-gradient(135deg, #10b981, #059669); }
+        .stat-icon.cyan { background: linear-gradient(135deg, #06b6d4, #0891b2); }
+        .stat-icon.rose { background: linear-gradient(135deg, #f43f5e, #e11d48); }
+        .stat-icon.violet { background: linear-gradient(135deg, #8b5cf6, #6d28d9); }
+        .stat-number { font-size: 1.7rem; font-weight: 700; line-height: 1.1; }
+        .stat-label { color: var(--muted); font-size: 0.72rem; font-weight: 600; letter-spacing: 0.6px; text-transform: uppercase; margin-top: 4px; }
+
+        .split-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .feed-item { padding: 10px 0; border-bottom: var(--border); font-size: 0.86rem; }
+        .feed-item:last-child { border-bottom: none; }
+        .feed-meta { color: var(--muted); font-size: 0.75rem; margin-top: 3px; }
+
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .form-group { margin-bottom: 16px; }
+        .form-grid .form-group { margin-bottom: 0; }
+        .form-group.full { grid-column: 1 / -1; }
+        label { display: block; margin-bottom: 7px; font-weight: 500; font-size: 0.84rem; color: var(--muted); }
+        input, select, textarea {
+            width: 100%; padding: 12px 14px;
+            border: 1.5px solid rgba(148, 163, 184, 0.38); border-radius: 12px;
+            font-size: 0.95rem; background: rgba(15, 23, 42, 0.72); color: var(--text);
+        }
+        body.light input, body.light select, body.light textarea { background: #fff; }
+        input:focus, select:focus, textarea:focus {
+            outline: none; border-color: var(--primary); box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.16);
+        }
+        input.is-invalid { border-color: var(--danger); }
+        .field-error { display: none; margin-top: 6px; font-size: 0.75rem; color: var(--danger); font-weight: 500; }
+        .field-error.show { display: block; }
+        .field-hint { display: block; margin-top: 6px; font-size: 0.75rem; color: var(--muted); }
+        .input-with-icon { position: relative; }
+        .input-with-icon input { padding-right: 44px; }
+        .toggle-btn {
+            position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+            background: transparent; border: none; cursor: pointer; font-size: 1rem; color: var(--muted); padding: 6px;
+        }
+
+        .btn {
+            display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+            padding: 11px 18px; border: none; border-radius: 12px; cursor: pointer;
+            font-size: 0.88rem; font-weight: 600; color: #fff;
+            transition: transform 0.2s var(--ease), filter 0.2s, opacity 0.2s;
+        }
+        .btn:hover:not(:disabled) { transform: translateY(-2px); filter: brightness(1.06); }
+        .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+        .btn-primary { background: var(--primary); color: #1f2937; box-shadow: 0 8px 18px rgba(245, 158, 11, 0.28); }
+        .btn-danger { background: var(--danger); box-shadow: 0 8px 18px rgba(239, 68, 68, 0.25); }
+        .btn-success { background: var(--success); box-shadow: 0 8px 18px rgba(16, 185, 129, 0.25); }
+        .btn-ghost { background: transparent; color: var(--text); border: var(--border); }
+        .btn-sm { padding: 8px 12px; font-size: 0.78rem; border-radius: 10px; }
+        .spinner {
+            width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.35);
+            border-top-color: #fff; border-radius: 50%; animation: spin 0.7s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: separate; border-spacing: 0; }
+        th {
+            text-align: left; color: var(--muted); font-weight: 600; text-transform: uppercase;
+            font-size: 0.72rem; letter-spacing: 0.7px; padding: 12px 14px; border-bottom: var(--border);
+        }
+        td { padding: 14px; border-bottom: var(--border); vertical-align: middle; }
+        tbody tr:hover { background: rgba(245, 158, 11, 0.07); }
+        .badge {
+            display: inline-flex; align-items: center; padding: 4px 10px;
+            border-radius: 999px; font-size: 0.72rem; font-weight: 600;
+        }
+        .badge-ok { background: rgba(16, 185, 129, 0.16); color: #6ee7b7; }
+        .badge-off { background: rgba(239, 68, 68, 0.16); color: #fca5a5; }
+        .badge-warn { background: rgba(245, 158, 11, 0.18); color: #fcd34d; }
+        .badge-muted { background: rgba(148, 163, 184, 0.16); color: var(--muted); }
+        .badge-super { background: rgba(245, 158, 11, 0.22); color: #fbbf24; }
+        body.light .badge-ok { color: #047857; }
+        body.light .badge-off { color: #b91c1c; }
+        body.light .badge-warn, body.light .badge-super { color: #b45309; }
+        .row-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+
+        .state-box { text-align: center; padding: 36px 16px; color: var(--muted); }
+        .state-box h4 { color: var(--text); margin: 10px 0 6px; }
+        .banner-error {
+            display: none; align-items: center; justify-content: space-between; gap: 12px;
+            padding: 12px 14px; border-radius: 12px; margin-bottom: 16px;
+            background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.28); color: #fca5a5;
+        }
+        .banner-error.show { display: flex; }
+        .filter-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
+        .filter-row .form-group { margin: 0; min-width: 160px; }
+
+        .toast-stack {
+            position: fixed; top: 18px; right: 18px; z-index: 4000;
+            display: flex; flex-direction: column; gap: 10px;
+            width: min(380px, calc(100vw - 24px)); pointer-events: none;
+        }
+        .toast {
+            pointer-events: auto; display: flex; gap: 12px; align-items: flex-start;
+            padding: 14px 16px; border-radius: 14px; background: var(--surface);
+            border: var(--border); box-shadow: var(--shadow);
+        }
+        .toast-icon { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: #fff; font-weight: 700; flex-shrink: 0; }
+        .toast.success .toast-icon { background: var(--success); }
+        .toast.error .toast-icon { background: var(--danger); }
+        .toast.warning .toast-icon { background: var(--warning); color: #1f2937; }
+        .toast.info .toast-icon { background: var(--info); color: #083344; }
+        .toast-title { font-weight: 600; font-size: 0.88rem; }
+        .toast-msg { color: var(--muted); font-size: 0.8rem; margin-top: 2px; word-break: break-word; }
+        .toast-close { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 1.1rem; }
+
+        .modal-backdrop {
+            position: fixed; inset: 0; background: rgba(2, 6, 23, 0.72);
+            backdrop-filter: blur(8px); z-index: 3500; display: none;
+            align-items: center; justify-content: center; padding: 20px;
+        }
+        .modal-backdrop.show { display: flex; }
+        .modal {
+            width: min(480px, 100%); background: var(--surface); border: var(--border);
+            border-radius: 20px; box-shadow: var(--shadow); padding: 22px;
+        }
+        .modal h3 { margin-bottom: 8px; }
+        .modal p { color: var(--muted); font-size: 0.9rem; margin-bottom: 20px; }
+        .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+        @media (max-width: 980px) {
+            .split-grid, .form-grid { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 1100px) {
+            .sidebar { transform: translateX(-105%); }
+            .sidebar.open { transform: translateX(0); }
+            .main-content { margin-left: 0; padding: 16px; }
+            .menu-toggle { display: grid; place-items: center; }
+            .header { flex-direction: column; align-items: flex-start; }
+            .header-actions { width: 100%; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { animation: none !important; transition: none !important; }
+        }
+    </style>
+</head>
+
+<body class="admin-pending">
+    <script src="session.js?v=20260907render"></script>
+    <script>
+        if (localStorage.getItem('geo_role') === 'worker') {
+            location.replace('super-login.html?denied=1');
+        }
+    </script>
+    <div class="overlay" id="sidebarOverlay"></div>
+    <div class="app-shell">
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="brand-mark">S</div>
+                <div class="brand-text">
+                    <h2>Geo-Lo</h2>
+                    <p>Geo-Lo owner</p>
+                </div>
+            </div>
+            <ul class="sidebar-menu">
+                <li class="menu-item active" data-tab="overview">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+                    Overview
+                </li>
+                <li class="menu-item" data-tab="organizations">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/></svg>
+                    Organizations
+                </li>
+                <li class="menu-item" data-tab="admins">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                    Org admins
+                </li>
+                <li class="menu-item" data-tab="sessions">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                    Sessions
+                </li>
+                <li class="menu-item" data-tab="directory">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                    Directory
+                </li>
+                <li class="menu-item" data-tab="security">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 4v5c0 5-3.4 8.4-8 9.5C7.4 20.4 4 17 4 12V7l8-4z"/></svg>
+                    Security
+                </li>
+                <li class="menu-item" data-tab="audit">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>
+                    Audit
+                </li>
+            </ul>
+            <div class="sidebar-footer">Hook organizations onto Geo-Lo</div>
+        </aside>
+
+        <main class="main-content">
+            <header class="header">
+                <div class="header-left">
+                    <button class="menu-toggle" id="menuToggle" type="button" aria-label="Open menu">☰</button>
+                    <div>
+                        <h1 id="pageTitle">Overview</h1>
+                        <div class="header-sub" id="pageSubtitle">Organizations on Geo-Lo and how they are using the product</div>
+                    </div>
+                </div>
+                <div class="header-actions">
+                    <span class="chip" id="youChip">Geo-Lo owner</span>
+                    <div class="toggle" id="themeToggle">Theme</div>
+                    <div class="toggle" id="logoutBtn">Log out</div>
+                </div>
+            </header>
+
+            <div id="overview" class="tab-content active">
+                <div class="stats-grid">
+                    <div class="stat-card"><div class="stat-icon amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/></svg></div><div><div class="stat-number" id="statOrgs">0</div><div class="stat-label">Organizations</div></div></div>
+                    <div class="stat-card"><div class="stat-icon indigo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div><div><div class="stat-number" id="statOrgAdmins">0</div><div class="stat-label">Org admins</div></div></div>
+                    <div class="stat-card"><div class="stat-icon emerald"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div><div><div class="stat-number" id="statWorkers">0</div><div class="stat-label">Workers on platform</div></div></div>
+                    <div class="stat-card"><div class="stat-icon cyan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><div><div class="stat-number" id="statSessions">0</div><div class="stat-label">Active sessions</div></div></div>
+                    <div class="stat-card"><div class="stat-icon violet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div><div><div class="stat-number" id="statOnSite">0</div><div class="stat-label">On site now</div></div></div>
+                    <div class="stat-card"><div class="stat-icon rose"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4"/><path d="M12 17h.01"/></svg></div><div><div class="stat-number" id="statFailed">0</div><div class="stat-label">Failed punches today</div></div></div>
+                </div>
+
+                <div class="banner-error" id="overviewError">
+                    <span>Could not load overview.</span>
+                    <button class="btn btn-ghost btn-sm" type="button" id="retryOverviewBtn">Retry</button>
+                </div>
+
+                <div class="split-grid">
+                    <div class="card">
+                        <div class="card-header"><div><h3>Recently hooked</h3><p>Organizations added to Geo-Lo</p></div></div>
+                        <div class="card-body" id="overviewOrgs"></div>
+                    </div>
+                    <div class="card">
+                        <div><h3>Platform audit</h3><p>Geo-Lo owner activity vs organization admin activity</p></div>
+                        <div class="card-body" id="overviewAudit"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="organizations" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <h3>Hook an organization</h3>
+                            <p>Add a company to Geo-Lo and optionally create its first admin. That admin tracks their own workers.</p>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <form id="orgForm" novalidate>
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label for="orgName">Organization name *</label>
+                                    <input type="text" id="orgName" required>
+                                    <span class="field-error" data-for="orgName"></span>
+                                </div>
+                                <div class="form-group">
+                                    <label for="orgEmail">Contact email</label>
+                                    <input type="email" id="orgEmail">
+                                </div>
+                                <div class="form-group">
+                                    <label for="orgPhone">Phone</label>
+                                    <input type="text" id="orgPhone">
+                                </div>
+                                <div class="form-group">
+                                    <label for="orgNotes">Notes</label>
+                                    <input type="text" id="orgNotes" placeholder="Plan, region, onboarding notes">
+                                </div>
+                                <div class="form-group">
+                                    <label for="orgAdminName">First admin name</label>
+                                    <input type="text" id="orgAdminName">
+                                </div>
+                                <div class="form-group">
+                                    <label for="orgAdminEmail">First admin email</label>
+                                    <input type="email" id="orgAdminEmail">
+                                </div>
+                                <div class="form-group">
+                                    <label for="orgAdminPassword">First admin password</label>
+                                    <input type="password" id="orgAdminPassword">
+                                    <span class="field-hint">Optional now — you can add admins later. 8+ characters if set.</span>
+                                </div>
+                            </div>
+                            <div style="margin-top:18px">
+                                <button type="submit" class="btn btn-primary" id="createOrgBtn">Hook organization</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <div><h3>Organizations</h3><p>Suspend an organization to lock out its admins and workers</p></div>
+                        <button class="btn btn-ghost btn-sm" type="button" id="refreshOrgsBtn">Refresh</button>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-wrap">
+                            <table id="orgsTable">
+                                <thead>
+                                    <tr><th>Name</th><th>Admins</th><th>Workers</th><th>Locations</th><th>Status</th><th></th></tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="admins" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <h3>Create organization admin</h3>
+                            <p>These people run attendance for their company. They cannot open this Geo-Lo owner console.</p>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <form id="adminForm" novalidate>
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label for="adminOrg">Organization *</label>
+                                    <select id="adminOrg" required><option value="">Select organization</option></select>
+                                    <span class="field-error" data-for="adminOrg"></span>
+                                </div>
+                                <div class="form-group">
+                                    <label for="adminName">Full name *</label>
+                                    <input type="text" id="adminName" required>
+                                    <span class="field-error" data-for="adminName"></span>
+                                </div>
+                                <div class="form-group">
+                                    <label for="adminEmail">Email *</label>
+                                    <input type="email" id="adminEmail" required>
+                                    <span class="field-error" data-for="adminEmail"></span>
+                                </div>
+                                <div class="form-group">
+                                    <label for="adminPassword">Password *</label>
+                                    <div class="input-with-icon">
+                                        <input type="password" id="adminPassword" required>
+                                        <button type="button" class="toggle-btn" id="toggleAdminPassword" aria-label="Show password">👁️</button>
+                                    </div>
+                                    <span class="field-hint">At least 8 characters</span>
+                                    <span class="field-error" data-for="adminPassword"></span>
+                                </div>
+                            </div>
+                            <div style="margin-top:18px">
+                                <button type="submit" class="btn btn-primary" id="createAdminBtn">Create org admin</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <div><h3>Organization admins</h3><p>Reset passwords or deactivate access to an organization console</p></div>
+                        <button class="btn btn-ghost btn-sm" type="button" id="refreshAdminsBtn">Refresh</button>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-wrap">
+                            <table id="adminsTable">
+                                <thead>
+                                    <tr><th>Name</th><th>Email</th><th>Organization</th><th>Status</th><th>Last seen</th><th></th></tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="sessions" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <div><h3>Active sessions</h3><p>Revoke access immediately if a device is lost or shared</p></div>
+                        <button class="btn btn-ghost btn-sm" type="button" id="refreshSessionsBtn">Refresh</button>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-wrap">
+                            <table id="sessionsTable">
+                                <thead>
+                                    <tr><th>User</th><th>Role</th><th>Last seen</th><th>Expires</th><th>Device</th><th></th></tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="directory" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <div><h3>Worker directory</h3><p>Workers across organizations. Day-to-day tracking stays with each org admin.</p></div>
+                        <button class="btn btn-ghost btn-sm" type="button" id="refreshWorkersBtn">Refresh</button>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-wrap">
+                            <table id="workersTable">
+                                <thead>
+                                    <tr><th>ID</th><th>Name</th><th>Organization</th><th>Email</th><th>Punches</th><th>Status</th><th></th></tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="security" class="tab-content">
+                <div class="stats-grid">
+                    <div class="stat-card"><div class="stat-icon rose"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4"/><path d="M12 17h.01"/></svg></div><div><div class="stat-number" id="secFailedToday">0</div><div class="stat-label">Failed today</div></div></div>
+                    <div class="stat-card"><div class="stat-icon amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4"/></svg></div><div><div class="stat-number" id="secFailedWeek">0</div><div class="stat-label">Failed this week</div></div></div>
+                    <div class="stat-card"><div class="stat-icon indigo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></div><div><div class="stat-number" id="secBound">0</div><div class="stat-label">Device-bound workers</div></div></div>
+                    <div class="stat-card"><div class="stat-icon cyan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c1.5-4 14.5-4 16 0"/></svg></div><div><div class="stat-number" id="secFace">0</div><div class="stat-label">Face required</div></div></div>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <div><h3>Punch attempts</h3><p>Blocked GPS, device mismatch, and other failed clock-ins</p></div>
+                        <button class="btn btn-ghost btn-sm" type="button" id="refreshSecurityBtn">Refresh</button>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-wrap">
+                            <table id="attemptsTable">
+                                <thead>
+                                    <tr><th>When</th><th>Worker</th><th>Action</th><th>Result</th><th>Reason</th></tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="audit" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <div><h3>System audit log</h3><p>Geo-Lo owner actions and organization-admin activity</p></div>
+                    </div>
+                    <div class="card-body">
+                        <div class="filter-row" style="margin-bottom:16px">
+                            <div class="form-group">
+                                <label for="auditAction">Action</label>
+                                <input type="text" id="auditAction" placeholder="login, create, update…">
+                            </div>
+                            <div class="form-group">
+                                <label for="auditEntity">Entity</label>
+                                <select id="auditEntity">
+                                    <option value="">All</option>
+                                    <option value="organization">organization</option>
+                                    <option value="admin">admin</option>
+                                    <option value="worker">worker</option>
+                                    <option value="attendance">attendance</option>
+                                    <option value="location">location</option>
+                                    <option value="shift">shift</option>
+                                </select>
+                            </div>
+                            <button class="btn btn-primary" type="button" id="filterAuditBtn">Filter</button>
+                        </div>
+                        <div class="table-wrap">
+                            <table id="auditTable">
+                                <thead>
+                                    <tr><th>When</th><th>Actor</th><th>Organization</th><th>Action</th><th>Entity</th><th>Details</th></tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div class="toast-stack" id="toastStack" aria-live="polite"></div>
+
+    <div class="modal-backdrop" id="confirmModal" role="dialog" aria-modal="true">
+        <div class="modal">
+            <h3 id="confirmTitle">Confirm</h3>
+            <p id="confirmMessage">Are you sure?</p>
+            <div class="modal-actions">
+                <button class="btn btn-ghost" type="button" id="confirmCancel">Cancel</button>
+                <button class="btn btn-danger" type="button" id="confirmOk">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-backdrop" id="editAdminModal" role="dialog" aria-modal="true">
+        <div class="modal">
+            <h3>Edit organization admin</h3>
+            <p>Leave password blank to keep the current one.</p>
+            <input type="hidden" id="editAdminId">
+            <div class="form-group">
+                <label for="editAdminName">Name</label>
+                <input type="text" id="editAdminName">
+            </div>
+            <div class="form-group">
+                <label for="editAdminEmail">Email</label>
+                <input type="email" id="editAdminEmail">
+            </div>
+            <div class="form-group">
+                <label for="editAdminOrg">Organization</label>
+                <select id="editAdminOrg"></select>
+            </div>
+            <div class="form-group">
+                <label for="editAdminPassword">New password</label>
+                <input type="password" id="editAdminPassword" placeholder="Optional">
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-ghost" type="button" id="editAdminCancel">Cancel</button>
+                <button class="btn btn-primary" type="button" id="editAdminSave">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="super-dashboard.js?v=20260907render"></script>
+</body>
+</html>

@@ -1,0 +1,1342 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Geo-Lo • Organization admin</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <style>
+        :root {
+            --bg: #0b1020;
+            --surface: #111827;
+            --muted: #94a3b8;
+            --text: #e5e7eb;
+            --primary: #6366f1;
+            --primary-press: #4f46e5;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --info: #22d3ee;
+            --card: rgba(17, 24, 39, 0.78);
+            --border: 1px solid rgba(148, 163, 184, 0.16);
+            --shadow: 0 20px 40px rgba(2, 6, 23, 0.45);
+            --radius: 18px;
+            --sidebar-w: 260px;
+            --ease: cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        body.light {
+            --bg: #f6f7fb;
+            --surface: #ffffff;
+            --muted: #64748b;
+            --text: #0f172a;
+            --primary: #4f46e5;
+            --primary-press: #4338ca;
+            --success: #16a34a;
+            --danger: #dc2626;
+            --warning: #d97706;
+            --info: #0891b2;
+            --card: rgba(255, 255, 255, 0.86);
+            --border: 1px solid rgba(100, 116, 139, 0.16);
+            --shadow: 0 16px 36px rgba(15, 23, 42, 0.08);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        html, body { height: 100%; }
+
+        body.admin-pending .app-shell,
+        body.admin-pending .overlay,
+        body.admin-pending .toast-stack,
+        body.admin-pending .modal-backdrop {
+            display: none !important;
+        }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            background:
+                radial-gradient(1100px 560px at 8% -10%, #1e1b4b 0%, transparent 50%),
+                radial-gradient(900px 480px at 100% 0%, #0e7490 0%, transparent 42%),
+                radial-gradient(800px 500px at 80% 110%, #312e81 0%, transparent 46%),
+                var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        body.light {
+            background:
+                radial-gradient(1100px 560px at 8% -10%, #c7d2fe 0%, transparent 50%),
+                radial-gradient(900px 480px at 100% 0%, #a5f3fc 0%, transparent 42%),
+                var(--bg);
+        }
+
+        button, input, select, textarea { font-family: inherit; }
+
+        .app-shell { min-height: 100vh; }
+
+        /* Sidebar */
+        .sidebar {
+            width: var(--sidebar-w);
+            height: 100vh;
+            position: fixed;
+            inset: 0 auto 0 0;
+            padding: 20px 14px;
+            background: var(--card);
+            border-right: var(--border);
+            backdrop-filter: blur(18px);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            transform: translateX(0);
+            transition: transform 0.4s var(--ease);
+        }
+
+        .sidebar-header {
+            padding: 10px 12px 22px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .brand-mark {
+            width: 42px;
+            height: 42px;
+            border-radius: 14px;
+            display: grid;
+            place-items: center;
+            background: linear-gradient(135deg, var(--primary), #22d3ee);
+            color: #fff;
+            font-weight: 700;
+            box-shadow: 0 8px 20px rgba(99, 102, 241, 0.35);
+            animation: floatMark 4s ease-in-out infinite;
+        }
+
+        @keyframes floatMark {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-3px); }
+        }
+
+        .brand-text h2 {
+            font-size: 1.05rem;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+        }
+
+        .brand-text p {
+            font-size: 0.72rem;
+            color: var(--muted);
+            font-weight: 500;
+        }
+
+        .sidebar-menu {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .menu-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 14px;
+            border-radius: 14px;
+            cursor: pointer;
+            color: var(--muted);
+            font-weight: 500;
+            position: relative;
+            overflow: hidden;
+            transition: background 0.25s var(--ease), color 0.25s var(--ease), transform 0.25s var(--ease);
+        }
+
+        .menu-item svg { width: 18px; height: 18px; flex-shrink: 0; }
+
+        .menu-item:hover {
+            background: rgba(99, 102, 241, 0.12);
+            color: var(--text);
+            transform: translateX(3px);
+        }
+
+        .menu-item.active {
+            background: linear-gradient(90deg, rgba(99, 102, 241, 0.22), rgba(99, 102, 241, 0.06));
+            color: var(--text);
+            box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.28);
+        }
+
+        .menu-item.active::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 10px;
+            bottom: 10px;
+            width: 3px;
+            border-radius: 99px;
+            background: var(--primary);
+        }
+
+        .sidebar-footer {
+            margin-top: auto;
+            padding: 12px;
+            color: var(--muted);
+            font-size: 0.75rem;
+        }
+
+        .overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(2, 6, 23, 0.55);
+            z-index: 900;
+            opacity: 0;
+            transition: opacity 0.3s var(--ease);
+        }
+
+        .overlay.show { display: block; opacity: 1; }
+
+        /* Main */
+        .main-content {
+            margin-left: var(--sidebar-w);
+            padding: 24px;
+            min-height: 100vh;
+            animation: pageIn 0.6s var(--ease);
+        }
+
+        @keyframes pageIn {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .header {
+            background: var(--card);
+            border: var(--border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            padding: 18px 22px;
+            margin-bottom: 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            backdrop-filter: blur(16px);
+            animation: slideDown 0.5s var(--ease);
+        }
+
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .header-left { display: flex; align-items: center; gap: 12px; }
+
+        .menu-toggle {
+            display: none;
+            width: 42px;
+            height: 42px;
+            border: var(--border);
+            background: rgba(255, 255, 255, 0.04);
+            color: var(--text);
+            border-radius: 12px;
+            cursor: pointer;
+        }
+
+        .header h1 {
+            font-size: 1.35rem;
+            font-weight: 650;
+        }
+
+        .header-sub {
+            color: var(--muted);
+            font-size: 0.8rem;
+            margin-top: 2px;
+        }
+
+        .header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+        .chip, .toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border-radius: 999px;
+            background: rgba(99, 102, 241, 0.12);
+            border: var(--border);
+            color: var(--text);
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+
+        .toggle { cursor: pointer; transition: transform 0.2s var(--ease), background 0.2s; }
+        .toggle:hover { transform: translateY(-1px); background: rgba(99, 102, 241, 0.2); }
+
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .status-active { background: var(--success); animation: pulse 2s infinite; }
+        .status-inactive { background: var(--danger); }
+
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.55); }
+            70% { box-shadow: 0 0 0 9px rgba(16, 185, 129, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+
+        /* Tabs */
+        .tab-content {
+            display: none;
+            opacity: 0;
+            transform: translateY(10px);
+        }
+
+        .tab-content.active {
+            display: block;
+            animation: fadeUp 0.45s var(--ease) forwards;
+        }
+
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Cards */
+        .card {
+            background: var(--card);
+            border: var(--border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            margin-bottom: 22px;
+            overflow: hidden;
+            backdrop-filter: blur(16px);
+            animation: fadeUp 0.5s var(--ease) both;
+        }
+
+        .card:nth-of-type(2) { animation-delay: 0.06s; }
+        .card:nth-of-type(3) { animation-delay: 0.12s; }
+
+        .card-header {
+            padding: 18px 22px;
+            border-bottom: var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .card-header h3 { font-size: 1.02rem; font-weight: 600; }
+        .card-header p { color: var(--muted); font-size: 0.82rem; margin-top: 4px; }
+        .card-body { padding: 22px; }
+
+        /* Stats */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+            gap: 16px;
+            margin-bottom: 22px;
+        }
+
+        .stat-card {
+            background: var(--card);
+            border: var(--border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            position: relative;
+            overflow: hidden;
+            animation: fadeUp 0.5s var(--ease) both;
+            transition: transform 0.3s var(--ease), box-shadow 0.3s var(--ease);
+        }
+
+        .stat-card:nth-child(1) { animation-delay: 0.05s; }
+        .stat-card:nth-child(2) { animation-delay: 0.1s; }
+        .stat-card:nth-child(3) { animation-delay: 0.15s; }
+        .stat-card:nth-child(4) { animation-delay: 0.2s; }
+
+        .stat-card:hover { transform: translateY(-4px); box-shadow: 0 18px 40px rgba(2, 6, 23, 0.28); }
+
+        .stat-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 14px;
+            display: grid;
+            place-items: center;
+            flex-shrink: 0;
+            color: #fff;
+        }
+
+        .stat-icon svg { width: 22px; height: 22px; }
+        .stat-icon.indigo { background: linear-gradient(135deg, #6366f1, #4f46e5); }
+        .stat-icon.emerald { background: linear-gradient(135deg, #10b981, #059669); }
+        .stat-icon.cyan { background: linear-gradient(135deg, #06b6d4, #0891b2); }
+        .stat-icon.amber { background: linear-gradient(135deg, #f59e0b, #d97706); }
+
+        .stat-number { font-size: 1.8rem; font-weight: 700; line-height: 1.1; }
+        .stat-label { color: var(--muted); font-size: 0.75rem; font-weight: 600; letter-spacing: 0.6px; text-transform: uppercase; margin-top: 4px; }
+
+        /* Forms */
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+
+        .form-group { margin-bottom: 16px; }
+        .form-grid .form-group { margin-bottom: 0; }
+        .form-group.full { grid-column: 1 / -1; }
+
+        label {
+            display: block;
+            margin-bottom: 7px;
+            font-weight: 500;
+            font-size: 0.84rem;
+            color: var(--muted);
+        }
+
+        input, select, textarea {
+            width: 100%;
+            padding: 12px 14px;
+            border: 1.5px solid rgba(148, 163, 184, 0.38);
+            border-radius: 12px;
+            font-size: 0.95rem;
+            background: rgba(15, 23, 42, 0.72);
+            color: var(--text);
+            transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+        }
+
+        input[type="checkbox"], input[type="radio"] {
+            width: auto;
+            padding: 0;
+            background: transparent;
+            border: none;
+            accent-color: var(--primary);
+        }
+
+        body.light input, body.light select, body.light textarea {
+            background: #fff;
+            border-color: rgba(100, 116, 139, 0.35);
+        }
+
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.16);
+        }
+
+        input.is-invalid, select.is-invalid {
+            border-color: var(--danger);
+            box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.12);
+        }
+
+        input.is-invalid.shake, select.is-invalid.shake {
+            animation: shake 0.4s var(--ease);
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-4px); }
+            50% { transform: translateX(4px); }
+            75% { transform: translateX(-3px); }
+        }
+
+        input:disabled, input[readonly]:not([type="checkbox"]):not([type="radio"]) {
+            opacity: 0.75;
+            cursor: not-allowed;
+            background: rgba(148, 163, 184, 0.08);
+        }
+
+        .field-hint { display: block; margin-top: 6px; font-size: 0.75rem; color: var(--muted); }
+        .field-error { display: none; margin-top: 6px; font-size: 0.75rem; color: var(--danger); font-weight: 500; }
+        .field-error.show { display: block; animation: fadeUp 0.25s var(--ease); }
+
+        .input-with-icon { position: relative; }
+        .input-with-icon input { padding-right: 44px; }
+        .toggle-btn {
+            position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+            background: transparent; border: none; cursor: pointer; font-size: 1rem; color: var(--muted); padding: 6px;
+        }
+
+        .check-row { display: flex; align-items: center; gap: 10px; }
+        .check-row input { width: auto; }
+
+        /* Buttons */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 11px 18px;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            font-size: 0.88rem;
+            font-weight: 600;
+            letter-spacing: 0.2px;
+            color: #fff;
+            transition: transform 0.2s var(--ease), box-shadow 0.2s, filter 0.2s, opacity 0.2s;
+        }
+
+        .btn:hover:not(:disabled) { transform: translateY(-2px); filter: brightness(1.06); }
+        .btn:active:not(:disabled) { transform: translateY(0) scale(0.98); }
+        .btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+
+        .btn-primary { background: var(--primary); box-shadow: 0 8px 18px rgba(99, 102, 241, 0.28); }
+        .btn-danger { background: var(--danger); box-shadow: 0 8px 18px rgba(239, 68, 68, 0.25); }
+        .btn-success { background: var(--success); box-shadow: 0 8px 18px rgba(16, 185, 129, 0.25); }
+        .btn-warning { background: var(--warning); color: #1f2937; box-shadow: 0 8px 18px rgba(245, 158, 11, 0.25); }
+        .btn-info { background: var(--info); color: #083344; box-shadow: 0 8px 18px rgba(34, 211, 238, 0.25); }
+        .btn-ghost {
+            background: transparent;
+            color: var(--text);
+            border: var(--border);
+            box-shadow: none;
+        }
+
+        .btn-sm { padding: 8px 12px; font-size: 0.78rem; border-radius: 10px; }
+
+        .spinner {
+            width: 16px; height: 16px;
+            border: 2px solid rgba(255,255,255,0.35);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Tables */
+        .table-wrap { overflow-x: auto; }
+
+        table { width: 100%; border-collapse: separate; border-spacing: 0; }
+
+        th {
+            text-align: left;
+            color: var(--muted);
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.72rem;
+            letter-spacing: 0.7px;
+            padding: 12px 14px;
+            border-bottom: var(--border);
+        }
+
+        td {
+            padding: 14px;
+            border-bottom: var(--border);
+            vertical-align: middle;
+        }
+
+        tbody tr { transition: background 0.2s; }
+        tbody tr:hover { background: rgba(99, 102, 241, 0.07); }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 0.72rem;
+            font-weight: 600;
+        }
+
+        .badge-warn { background: rgba(245, 158, 11, 0.18); color: #fcd34d; }
+        body.light .badge-warn { color: #b45309; }
+
+        .live-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+        .live-panel { background: rgba(255,255,255,0.03); border: var(--border); border-radius: 14px; padding: 14px; min-height: 140px; }
+        .live-panel h4 { font-size: 0.85rem; margin-bottom: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+        .live-item { padding: 8px 0; border-bottom: var(--border); font-size: 0.88rem; }
+        .live-item:last-child { border-bottom: none; }
+
+        .alert-list { max-height: 280px; overflow: auto; }
+        .alert-row { display: flex; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: var(--border); font-size: 0.85rem; }
+        .badge-off { background: rgba(239, 68, 68, 0.16); color: #fca5a5; }
+        .badge-muted { background: rgba(148, 163, 184, 0.16); color: var(--muted); }
+
+        body.light .badge-ok { color: #047857; }
+        body.light .badge-off { color: #b91c1c; }
+
+        .row-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+
+        /* Location */
+        .location-setup-section {
+            margin-bottom: 22px;
+            padding: 18px;
+            border-radius: 16px;
+            border: var(--border);
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .location-setup-section h4 { margin-bottom: 14px; font-size: 1rem; }
+
+        .auto-detect-section {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 16px;
+            border-radius: 14px;
+            margin-bottom: 16px;
+            background: rgba(245, 158, 11, 0.1);
+            border: 1px solid rgba(245, 158, 11, 0.25);
+        }
+
+        .location-buttons { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+
+        .location-message {
+            display: none;
+            padding: 12px 14px;
+            border-radius: 12px;
+            margin: 12px 0;
+            font-weight: 500;
+            font-size: 0.88rem;
+            animation: fadeUp 0.3s var(--ease);
+        }
+
+        .location-message.show { display: block; }
+        .location-message.success { background: rgba(16, 185, 129, 0.15); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.3); }
+        .location-message.error { background: rgba(239, 68, 68, 0.15); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.3); }
+        .location-message.info { background: rgba(34, 211, 238, 0.12); color: #67e8f9; border: 1px solid rgba(34, 211, 238, 0.28); }
+
+        .map-container {
+            height: 0;
+            margin-top: 0;
+            border-radius: 16px;
+            overflow: hidden;
+            opacity: 0;
+            transition: height 0.4s var(--ease), opacity 0.35s var(--ease), margin 0.35s var(--ease);
+        }
+
+        .map-container.open {
+            height: 400px;
+            margin-top: 16px;
+            opacity: 1;
+            border: var(--border);
+        }
+
+        .coordinates-display {
+            margin-top: 14px;
+            padding: 14px;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.04);
+            border: var(--border);
+            font-family: ui-monospace, Consolas, monospace;
+            font-size: 0.86rem;
+        }
+
+        .accuracy-info { color: var(--muted); font-size: 0.78rem; margin-top: 4px; }
+
+        /* Empty / error / loading */
+        .state-box {
+            text-align: center;
+            padding: 36px 16px;
+            color: var(--muted);
+        }
+
+        .state-box h4 { color: var(--text); margin: 10px 0 6px; }
+        .state-box p { font-size: 0.88rem; margin-bottom: 14px; }
+
+        .skeleton {
+            height: 14px;
+            border-radius: 8px;
+            background: linear-gradient(90deg, rgba(148,163,184,0.12) 25%, rgba(148,163,184,0.22) 37%, rgba(148,163,184,0.12) 63%);
+            background-size: 400% 100%;
+            animation: shimmer 1.2s ease infinite;
+        }
+
+        @keyframes shimmer {
+            0% { background-position: 100% 0; }
+            100% { background-position: 0 0; }
+        }
+
+        .skeleton-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+
+        .banner-error {
+            display: none;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 12px 14px;
+            border-radius: 12px;
+            margin-bottom: 16px;
+            background: rgba(239, 68, 68, 0.12);
+            border: 1px solid rgba(239, 68, 68, 0.28);
+            color: #fca5a5;
+            animation: fadeUp 0.3s var(--ease);
+        }
+
+        .banner-error.show { display: flex; }
+
+        /* Toast */
+        .toast-stack {
+            position: fixed;
+            top: 18px;
+            right: 18px;
+            z-index: 4000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            width: min(380px, calc(100vw - 24px));
+            pointer-events: none;
+        }
+
+        .toast {
+            pointer-events: auto;
+            display: flex;
+            gap: 12px;
+            align-items: flex-start;
+            padding: 14px 16px;
+            border-radius: 14px;
+            background: var(--surface);
+            border: var(--border);
+            box-shadow: var(--shadow);
+            animation: toastIn 0.4s var(--ease);
+        }
+
+        .toast.hide { animation: toastOut 0.28s var(--ease) forwards; }
+
+        @keyframes toastIn {
+            from { opacity: 0; transform: translateX(24px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        @keyframes toastOut {
+            to { opacity: 0; transform: translateX(24px); }
+        }
+
+        .toast-icon {
+            width: 28px; height: 28px; border-radius: 8px;
+            display: grid; place-items: center; flex-shrink: 0; color: #fff; font-weight: 700;
+        }
+
+        .toast.success .toast-icon { background: var(--success); }
+        .toast.error .toast-icon { background: var(--danger); }
+        .toast.warning .toast-icon { background: var(--warning); color: #1f2937; }
+        .toast.info .toast-icon { background: var(--info); color: #083344; }
+
+        .toast-body { flex: 1; min-width: 0; }
+        .toast-title { font-weight: 600; font-size: 0.88rem; }
+        .toast-msg { color: var(--muted); font-size: 0.8rem; margin-top: 2px; word-break: break-word; }
+        .toast-close {
+            background: none; border: none; color: var(--muted); cursor: pointer; font-size: 1.1rem; line-height: 1;
+        }
+
+        /* Modal */
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(2, 6, 23, 0.72);
+            backdrop-filter: blur(8px);
+            z-index: 3500;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .modal-backdrop.show { display: flex; animation: fadeIn 0.2s ease; }
+
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        .modal {
+            width: min(440px, 100%);
+            background: var(--surface);
+            border: var(--border);
+            border-radius: 20px;
+            box-shadow: var(--shadow);
+            padding: 22px;
+            animation: modalIn 0.35s var(--ease);
+        }
+
+        @keyframes modalIn {
+            from { opacity: 0; transform: scale(0.94) translateY(10px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+
+        .modal h3 { margin-bottom: 8px; }
+        .modal p { color: var(--muted); font-size: 0.9rem; margin-bottom: 20px; }
+        .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+        .summary-card {
+            margin-top: 18px;
+            padding: 16px;
+            border-radius: 14px;
+            background: rgba(99, 102, 241, 0.08);
+            border: var(--border);
+        }
+
+        .summary-card h4 { margin-bottom: 8px; }
+
+        @media (max-width: 900px) {
+            .sidebar { transform: translateX(-105%); }
+            .sidebar.open { transform: translateX(0); }
+            .main-content { margin-left: 0; padding: 16px; }
+            .menu-toggle { display: grid; place-items: center; }
+            .form-grid { grid-template-columns: 1fr; }
+            .header { flex-direction: column; align-items: flex-start; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation: none !important;
+                transition: none !important;
+            }
+        }
+    </style>
+</head>
+
+<body class="admin-pending">
+    <script src="session.js?v=20260907render"></script>
+    <script>
+        if (localStorage.getItem('geo_role') === 'worker') {
+            location.replace('admin-login.html?denied=1');
+        }
+        setTimeout(function () {
+            if (document.body.classList.contains('admin-pending')) {
+                location.replace('admin-login.html');
+            }
+        }, 4000);
+    </script>
+    <div class="overlay" id="sidebarOverlay"></div>
+    <div class="app-shell">
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="brand-mark">G</div>
+                <div class="brand-text">
+                    <h2>Geo-Lo</h2>
+                    <p id="orgBrand">Organization console</p>
+                </div>
+            </div>
+            <ul class="sidebar-menu">
+                <li class="menu-item active" data-tab="dashboard">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+                    Dashboard
+                </li>
+                <li class="menu-item" data-tab="workers">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                    Workers
+                </li>
+                <li class="menu-item" data-tab="locations">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
+                    Locations
+                </li>
+                <li class="menu-item" data-tab="shifts">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                    Shifts
+                </li>
+                <li class="menu-item" data-tab="reports">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 16l3-5 3 3 4-7"/></svg>
+                    Reports
+                </li>
+                <li class="menu-item" data-tab="audit">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>
+                    Audit
+                </li>
+            </ul>
+            <div class="sidebar-footer">Track your workers</div>
+        </aside>
+
+        <main class="main-content">
+            <header class="header">
+                <div class="header-left">
+                    <button class="menu-toggle" id="menuToggle" type="button" aria-label="Open menu">☰</button>
+                    <div>
+                        <h1 id="pageTitle">Dashboard</h1>
+                        <div class="header-sub" id="pageSubtitle">Who is on site among your workers</div>
+                    </div>
+                </div>
+                <div class="header-actions">
+                    <div class="chip" id="alertChip" title="Unread alerts">
+                        <span id="alertCount">0</span>
+                        <span>alerts</span>
+                    </div>
+                    <div class="chip" id="locationStatusChip">
+                        <span class="status-indicator status-inactive" id="locationStatusIndicator"></span>
+                        <span id="locationStatusText">Location idle</span>
+                    </div>
+                    <div class="toggle" id="themeToggle">Theme</div>
+                    <div class="toggle" id="logoutBtn">Log out</div>
+                </div>
+            </header>
+
+            <div id="dashboard" class="tab-content active">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon indigo">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+                        </div>
+                        <div>
+                            <div class="stat-number" id="totalWorkers">0</div>
+                            <div class="stat-label">Total workers</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon emerald">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>
+                        </div>
+                        <div>
+                            <div class="stat-number" id="checkedInToday">0</div>
+                            <div class="stat-label">Checked in today</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon cyan">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z"/></svg>
+                        </div>
+                        <div>
+                            <div class="stat-number" id="totalLocations">0</div>
+                            <div class="stat-label">Work locations</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon amber">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                        </div>
+                        <div>
+                            <div class="stat-number" id="onSiteNow">0</div>
+                            <div class="stat-label">On site now</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <h3>Who’s at work</h3>
+                            <p>Live occupancy, lateness, absences, and missed checkouts</p>
+                        </div>
+                        <button class="btn btn-ghost btn-sm" type="button" id="refreshDashboardBtn">Refresh</button>
+                    </div>
+                    <div class="card-body">
+                        <div class="banner-error" id="dashboardError">
+                            <span id="dashboardErrorText">Could not load dashboard data.</span>
+                            <button class="btn btn-ghost btn-sm" type="button" id="retryDashboardBtn">Retry</button>
+                        </div>
+                        <div class="live-grid" id="liveBoard">
+                            <div class="live-panel"><h4>On site</h4><div id="liveOnSite"></div></div>
+                            <div class="live-panel"><h4>Late today</h4><div id="liveLate"></div></div>
+                            <div class="live-panel"><h4>Not arrived</h4><div id="liveMissing"></div></div>
+                            <div class="live-panel"><h4>Missed checkout</h4><div id="liveMissed"></div></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <h3>Exception alerts</h3>
+                            <p>Late, absent, GPS, and face failures</p>
+                        </div>
+                        <button class="btn btn-ghost btn-sm" type="button" id="markAlertsReadBtn">Mark all read</button>
+                    </div>
+                    <div class="card-body">
+                        <div class="alert-list" id="alertList"></div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <h3>Today’s punches</h3>
+                            <p>Every check-in and check-out recorded today</p>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div id="todayActivity"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="workers" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <h3>Register worker</h3>
+                            <p>Create a new employee account with PIN and password</p>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <form id="workerForm" novalidate>
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label for="employeeId">Employee ID *</label>
+                                    <input type="text" id="employeeId" autocomplete="off" required>
+                                    <span class="field-error" data-for="employeeId"></span>
+                                </div>
+                                <div class="form-group">
+                                    <label for="workerName">Full name *</label>
+                                    <input type="text" id="workerName" required>
+                                    <span class="field-error" data-for="workerName"></span>
+                                </div>
+                                <div class="form-group">
+                                    <label for="workerEmail">Email *</label>
+                                    <input type="email" id="workerEmail" required>
+                                    <span class="field-error" data-for="workerEmail"></span>
+                                </div>
+                                <div class="form-group">
+                                    <label for="workerPhone">Phone</label>
+                                    <input type="text" id="workerPhone">
+                                </div>
+                                <div class="form-group">
+                                    <label for="workerPin">PIN *</label>
+                                    <input type="text" id="workerPin" inputmode="numeric" required>
+                                    <span class="field-error" data-for="workerPin"></span>
+                                </div>
+                                <div class="form-group">
+                                    <label for="workerPassword">Password *</label>
+                                    <div class="input-with-icon">
+                                        <input type="password" id="workerPassword" required>
+                                        <button type="button" class="toggle-btn" id="toggleWorkerPassword" aria-label="Show password">👁️</button>
+                                    </div>
+                                    <span class="field-error" data-for="workerPassword"></span>
+                                </div>
+                                <div class="form-group">
+                                    <label for="workerShift">Shift</label>
+                                    <select id="workerShift"><option value="">Default shift</option></select>
+                                </div>
+                                <div class="form-group check-row">
+                                    <input type="checkbox" id="workerRequireFace">
+                                    <label for="workerRequireFace" style="margin:0">Require face on check-in</label>
+                                </div>
+                            </div>
+                            <div style="margin-top:18px">
+                                <button type="submit" class="btn btn-primary" id="registerWorkerBtn">Register worker</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <h3>Workers</h3>
+                            <p>Active employees in the system</p>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="banner-error" id="workersError">
+                            <span id="workersErrorText">Could not load workers.</span>
+                            <button class="btn btn-ghost btn-sm" type="button" id="retryWorkersBtn">Retry</button>
+                        </div>
+                        <div class="table-wrap">
+                            <table id="workersTable">
+                                <thead>
+                                    <tr>
+                                        <th>Employee ID</th>
+                                        <th>Name</th>
+                                        <th>Email</th>
+                                        <th>Phone</th>
+                                        <th>Shift</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="locations" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <h3>Add location</h3>
+                            <p>Detect your position, pick from the map, or use the default office</p>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="location-setup-section">
+                            <h4>Location detection</h4>
+                            <div class="auto-detect-section">
+                                <strong>Status</strong>
+                                <div>
+                                    <span id="autoLocationStatus">Ready to detect your location</span>
+                                    <div class="accuracy-info" id="accuracyInfo"></div>
+                                </div>
+                            </div>
+                            <div class="location-buttons">
+                                <button type="button" class="btn btn-success" id="startAutoLocationBtn">Start detection</button>
+                                <button type="button" class="btn btn-info" id="openMapPickerBtn">Pick from map</button>
+                                <button type="button" class="btn btn-warning" id="useDefaultOfficeBtn">Use default office</button>
+                                <button type="button" class="btn btn-danger" id="stopAutoLocationBtn" style="display:none">Stop detection</button>
+                            </div>
+                            <div id="locationMessage" class="location-message"></div>
+                            <div id="mapContainer" class="map-container"></div>
+                            <div class="coordinates-display">
+                                <strong>Coordinates</strong>
+                                <div id="coordinatesDisplay">Not detected yet</div>
+                                <div class="accuracy-info" id="coordinatesAccuracy"></div>
+                            </div>
+                        </div>
+
+                        <form id="locationForm" novalidate>
+                            <div class="form-group">
+                                <label for="locationName">Location name *</label>
+                                <input type="text" id="locationName" placeholder="e.g. Main Office" required>
+                                <span class="field-error" data-for="locationName"></span>
+                            </div>
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label for="locationLat">Latitude *</label>
+                                    <input type="number" step="any" id="locationLat" required readonly>
+                                    <span class="field-hint">Filled from detection or map</span>
+                                    <span class="field-error" data-for="locationLat"></span>
+                                </div>
+                                <div class="form-group">
+                                    <label for="locationLng">Longitude *</label>
+                                    <input type="number" step="any" id="locationLng" required readonly>
+                                    <span class="field-hint">Filled from detection or map</span>
+                                    <span class="field-error" data-for="locationLng"></span>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="locationRadius">Geofence radius (meters) *</label>
+                                <input type="number" id="locationRadius" value="100" min="50" max="1000" required>
+                                <span class="field-hint">How far from the center employees can check in (50–1000 m)</span>
+                                <span class="field-error" data-for="locationRadius"></span>
+                            </div>
+                            <div class="form-group check-row">
+                                <input type="checkbox" id="locationDefault">
+                                <label for="locationDefault" style="margin:0">Set as default location</label>
+                            </div>
+                            <button type="submit" class="btn btn-primary" id="submitLocationBtn" disabled>
+                                Add location (detect or pick first)
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <h3>Current locations</h3>
+                            <p>Geofenced workplaces used for check-in</p>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="banner-error" id="locationsError">
+                            <span id="locationsErrorText">Could not load locations.</span>
+                            <button class="btn btn-ghost btn-sm" type="button" id="retryLocationsBtn">Retry</button>
+                        </div>
+                        <div class="table-wrap">
+                            <table id="locationsTable">
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Coordinates</th>
+                                        <th>Radius</th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="shifts" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <h3>Create shift</h3>
+                            <p>Expected start/end, grace period, and overtime rules</p>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <form id="shiftForm">
+                            <div class="form-grid">
+                                <div class="form-group full">
+                                    <label for="shiftName">Name *</label>
+                                    <input type="text" id="shiftName" required placeholder="Standard day">
+                                </div>
+                                <div class="form-group">
+                                    <label for="shiftStart">Start *</label>
+                                    <input type="time" id="shiftStart" value="08:00" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="shiftEnd">End *</label>
+                                    <input type="time" id="shiftEnd" value="17:00" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="shiftGrace">Late grace (minutes)</label>
+                                    <input type="number" id="shiftGrace" value="10" min="0" max="180">
+                                </div>
+                                <div class="form-group">
+                                    <label for="shiftBreak">Break (minutes)</label>
+                                    <input type="number" id="shiftBreak" value="60" min="0" max="240">
+                                </div>
+                                <div class="form-group">
+                                    <label for="shiftOvertime">Overtime after (minutes, 0 = shift length)</label>
+                                    <input type="number" id="shiftOvertime" value="0" min="0">
+                                </div>
+                                <div class="form-group">
+                                    <label for="shiftDays">Work days (0=Sun … 6=Sat)</label>
+                                    <input type="text" id="shiftDays" value="1,2,3,4,5">
+                                </div>
+                            </div>
+                            <div style="margin-top:16px">
+                                <button type="submit" class="btn btn-primary" id="shiftSubmitBtn">Save shift</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <h3>Shifts</h3>
+                            <p>Assign these to workers from the Workers tab</p>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-wrap">
+                            <table id="shiftsTable">
+                                <thead>
+                                    <tr><th>Name</th><th>Hours</th><th>Grace</th><th>Break</th><th>Days</th><th>Actions</th></tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="reports" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <h3>Daily report</h3>
+                            <p>Attendance records for today</p>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <button class="btn btn-primary" type="button" id="dailyReportBtn">Generate today’s report</button>
+                        <div id="dailyReport" style="margin-top:20px"></div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <h3>Monthly report</h3>
+                            <p>Hours and presence for a selected worker</p>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="workerSelectReport">Worker</label>
+                                <select id="workerSelectReport">
+                                    <option value="">Loading workers...</option>
+                                </select>
+                                <span class="field-error" data-for="workerSelectReport"></span>
+                            </div>
+                            <div class="form-group">
+                                <label for="monthSelect">Month</label>
+                                <input type="month" id="monthSelect">
+                            </div>
+                        </div>
+                        <button class="btn btn-primary" type="button" id="monthlyReportBtn">Generate report</button>
+                        <div id="monthlyReport" style="margin-top:20px"></div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <h3>Payroll export</h3>
+                            <p>Hours, overtime, late, and absences for a date range (opens in Excel)</p>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="payrollFrom">From</label>
+                                <input type="date" id="payrollFrom">
+                            </div>
+                            <div class="form-group">
+                                <label for="payrollTo">To</label>
+                                <input type="date" id="payrollTo">
+                            </div>
+                        </div>
+                        <button class="btn btn-primary" type="button" id="payrollLoadBtn">Load payroll</button>
+                        <button class="btn btn-success" type="button" id="payrollCsvBtn">Download CSV</button>
+                        <button class="btn btn-info" type="button" id="payrollXlsBtn">Download Excel</button>
+                        <div id="payrollReport" style="margin-top:20px"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="audit" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <h3>Audit log</h3>
+                            <p>Logins, punches, and corrections for this organization</p>
+                        </div>
+                        <button class="btn btn-ghost btn-sm" type="button" id="refreshAuditBtn">Refresh</button>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-wrap">
+                            <table id="auditTable">
+                                <thead>
+                                    <tr><th>When</th><th>Actor</th><th>Action</th><th>Entity</th><th>Details</th></tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div class="toast-stack" id="toastStack" aria-live="polite"></div>
+
+    <div class="modal-backdrop" id="confirmModal" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+        <div class="modal">
+            <h3 id="confirmTitle">Confirm</h3>
+            <p id="confirmMessage">Are you sure?</p>
+            <div class="modal-actions">
+                <button class="btn btn-ghost" type="button" id="confirmCancel">Cancel</button>
+                <button class="btn btn-danger" type="button" id="confirmOk">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-backdrop" id="correctModal" role="dialog" aria-modal="true">
+        <div class="modal" style="width:min(520px,100%)">
+            <h3>Correct attendance</h3>
+            <p>This writes to the audit log. A reason is required.</p>
+            <input type="hidden" id="correctId">
+            <div class="form-group">
+                <label for="correctCheckIn">Check in</label>
+                <input type="datetime-local" id="correctCheckIn">
+            </div>
+            <div class="form-group">
+                <label for="correctCheckOut">Check out (blank = still open)</label>
+                <input type="datetime-local" id="correctCheckOut">
+            </div>
+            <div class="form-group">
+                <label for="correctReason">Reason *</label>
+                <input type="text" id="correctReason" placeholder="Forgot to clock out">
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-ghost" type="button" id="correctCancel">Cancel</button>
+                <button class="btn btn-primary" type="button" id="correctSave">Save correction</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="admin-dashboard.js?v=20260907render"></script>
+</body>
+
+</html>

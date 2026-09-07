@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Geo-Lo • Attendance</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0f172a;
+            --surface: #111827;
+            --muted: #94a3b8;
+            --text: #e5e7eb;
+            --primary: #6366f1;
+            --primary-press: #4f46e5;
+            --success: #10b981;
+            --danger: #ef4444;
+            --card: rgba(17,24,39,0.85);
+            --border: 1px solid rgba(148,163,184,0.15);
+            --shadow: 0 20px 40px rgba(2,6,23,0.5);
+            --radius: 18px;
+        }
+        body.light {
+            --bg: #f6f7fb;
+            --surface: #ffffff;
+            --muted: #64748b;
+            --text: #0f172a;
+            --primary: #3b82f6;
+            --primary-press: #2563eb;
+            --success: #16a34a;
+            --danger: #dc2626;
+            --card: rgba(255,255,255,0.9);
+            --border: 1px solid rgba(100,116,139,0.15);
+            --shadow: 0 20px 40px rgba(2,6,23,0.1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {font-family:'Poppins',sans-serif;background:radial-gradient(1200px 600px at 10% 10%,#0b1020 0%,var(--bg) 40%),radial-gradient(800px 400px at 90% 10%,#181d31 0%,transparent 45%);min-height:100vh;padding:24px;display:flex;align-items:center;justify-content:center;color:var(--text)}
+        body:not(.worker-ok) .container,
+        body:not(.worker-ok) .face-modal { visibility: hidden; }
+
+        .container {width:100%;max-width:520px;background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;border:var(--border);transform:translateY(0);transition:transform .3s ease,box-shadow .3s ease;animation:slideUp .6s ease-out}
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .container:hover {
+            transform: translateY(-5px);
+        }
+
+        .header {background:linear-gradient(90deg,rgba(99,102,241,.15),rgba(99,102,241,.05));color:var(--text);padding:24px 20px;text-align:center;position:relative}
+
+        .header::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(45deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0) 100%);
+        }
+
+        .header h1 {font-size:28px;margin-bottom:8px;font-weight:700;letter-spacing:.5px}
+
+        .header p {font-size:14px;opacity:.85;font-weight:500;color:var(--muted)}
+        .face-modal{position:fixed;inset:0;background:rgba(2,6,23,.72);display:none;align-items:center;justify-content:center;padding:20px;z-index:50}
+        .face-modal.show{display:flex}
+        .face-card{width:min(420px,100%);background:var(--card);border:var(--border);border-radius:18px;padding:18px;text-align:center}
+        .face-card video{width:100%;border-radius:14px;background:#000;min-height:220px}
+        .face-actions{display:flex;gap:10px;margin-top:12px}
+        .top-controls{position:absolute;right:16px;top:16px;display:flex;gap:8px}
+        .toggle {display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;background:rgba(99,102,241,.12);color:var(--text);cursor:pointer}
+
+        .content {
+            padding: 30px;
+        }
+
+        .location-status {background:rgba(255,255,255,.04);border-radius:16px;padding:18px;margin-bottom:20px;border-left:5px solid var(--primary);box-shadow:0 4px 15px rgba(0,0,0,.08);transition:.3s}
+
+        .location-status:hover {
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            margin-bottom: 12px;
+            font-weight: 500;
+        }
+
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 12px;
+            position: relative;
+        }
+
+        .status-dot::after {
+            content: '';
+            position: absolute;
+            top: -4px;
+            left: -4px;
+            right: -4px;
+            bottom: -4px;
+            border-radius: 50%;
+            border: 2px solid currentColor;
+            opacity: 0.3;
+            animation: ripple 1.5s infinite;
+        }
+
+        @keyframes ripple {
+            0% {
+                transform: scale(1);
+                opacity: 0.3;
+            }
+
+            100% {
+                transform: scale(2);
+                opacity: 0;
+            }
+        }
+
+        .status-ok {background:var(--success);color:var(--success)}
+
+        .status-error {background:var(--danger);color:var(--danger)}
+
+        .input {width:100%;padding:16px 18px;border:2px solid rgba(148,163,184,.2);border-radius:14px;margin-bottom:18px;font-size:16px;background:rgba(255,255,255,.06);color:var(--text);transition:.2s}
+        .input:focus {border-color:var(--primary);outline:none;box-shadow:0 0 0 4px rgba(99,102,241,.15)}
+
+        .worker-select:focus {
+            border-color: #3498db;
+            outline: none;
+            box-shadow: 0 0 0 4px rgba(52, 152, 219, 0.1);
+        }
+
+        .actions {display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:22px}
+
+        .btn {padding:16px;border:none;border-radius:14px;font-size:16px;font-weight:700;cursor:pointer;transition:.2s;letter-spacing:.4px}
+
+        .btn:active {
+            transform: scale(0.98);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-checkin {background:var(--success);color:#fff;box-shadow:0 6px 16px rgba(16,185,129,.35)}
+
+        .btn-checkin:hover:not(:disabled) {
+            background: #27ae60;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(46, 204, 113, 0.4);
+        }
+
+        .btn-checkout {background:var(--danger);color:#fff;box-shadow:0 6px 16px rgba(239,68,68,.35)}
+
+        .btn-checkout:hover:not(:disabled) {
+            background: #c0392b;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(231, 76, 60, 0.4);
+        }
+
+        .message {padding:14px;border-radius:14px;margin-bottom:18px;text-align:center;display:none;font-weight:600;animation:fadeIn .3s ease}
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .attendance-record {background:rgba(255,255,255,.04);border-radius:16px;padding:18px;border:var(--border)}
+
+        .attendance-record h3 {
+            font-size: 16px;
+            color: #7f8c8d;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 600;
+        }
+
+        .record-item {display:flex;justify-content:space-between;padding:12px 0;border-bottom:1px solid rgba(148,163,184,.15);font-size:14px;color:var(--text)}
+
+        .record-item:last-child {
+            border-bottom: none;
+        }
+
+        #distanceInfo {
+            margin-top: 8px;
+            font-size: 13px;
+            color: #7f8c8d;
+            padding-left: 24px;
+        }
+    </style>
+</head>
+
+<body>
+    <script src="session.js?v=20260907render"></script>
+    <script>localStorage.removeItem('authWorker');</script>
+    <div class="container">
+        <div class="header">
+            <div class="top-controls">
+                <div class="toggle" id="themeToggle">Theme</div>
+                <div class="toggle" id="logoutBtn">Log out</div>
+            </div>
+            <h1>Geo-Lo Attendance</h1>
+            <p id="workerNameLabel">Secure, location-aware check-in</p>
+        </div>
+
+        <div class="content">
+            <div class="location-status">
+                <div class="status-indicator">
+                    <div class="status-dot" id="statusDot"></div>
+                    <span id="locationStatus">Checking your location...</span>
+                </div>
+                <div id="distanceInfo"></div>
+            </div>
+
+            <div id="message" class="message"></div>
+
+            <div class="actions">
+                <button class="btn btn-checkin" id="checkinBtn" onclick="recordAttendance('checkin')" disabled>
+                    Check In
+                </button>
+                <button class="btn btn-checkout" id="checkoutBtn" onclick="recordAttendance('checkout')" disabled>
+                    Check Out
+                </button>
+            </div>
+
+            <div class="attendance-record">
+                <h3>Today's Record</h3>
+                <div id="todayRecord">
+                    <div class="record-item">
+                        <span>No records for today</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="face-modal" id="faceModal">
+        <div class="face-card">
+            <h3>Face check</h3>
+            <p style="color:var(--muted);font-size:13px;margin:8px 0 12px">Look straight at the camera in good light. If the photo is blurry or dark, check-in is blocked and you must retake it.</p>
+            <video id="faceVideo" autoplay playsinline></video>
+            <canvas id="faceCanvas" hidden></canvas>
+            <div class="face-actions">
+                <button class="btn btn-checkin" id="captureFaceBtn" type="button">Capture & check in</button>
+                <button class="btn btn-checkout" id="cancelFaceBtn" type="button">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="worker-app.js?v=20260907render"></script>
+    <script>
+        (function(){
+            const t=document.getElementById('themeToggle');
+            const d=localStorage.getItem('geo_theme')||'dark';
+            if(d==='light') document.body.classList.add('light');
+            t.addEventListener('click',()=>{
+                document.body.classList.toggle('light');
+                localStorage.setItem('geo_theme', document.body.classList.contains('light')?'light':'dark');
+            });
+        })();
+    </script>
+</body>
+
+</html>

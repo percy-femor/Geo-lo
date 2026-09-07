@@ -1,0 +1,13 @@
+DirectoryIndex index.php login.html
+
+<IfModule mod_authz_core.c>
+    <FilesMatch "^(admin-view|worker-view|super-view)\.html$">
+        Require all denied
+    </FilesMatch>
+</IfModule>
+<IfModule !mod_authz_core.c>
+    <FilesMatch "^(admin-view|worker-view|super-view)\.html$">
+        Order allow,deny
+        Deny from all
+    </FilesMatch>
+</IfModule>

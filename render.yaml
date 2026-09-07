@@ -1,0 +1,43 @@
+services:
+  - type: web
+    name: geo-lo
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /login.html
+    envVars:
+      - key: DB_HOST
+        fromService:
+          name: geo-lo-mysql
+          type: pserv
+          property: host
+      - key: DB_PORT
+        value: "3306"
+      - key: DB_NAME
+        value: geo_lo
+      - key: DB_USER
+        value: geolo
+      - key: DB_PASSWORD
+        fromService:
+          name: geo-lo-mysql
+          type: pserv
+          envVarKey: MYSQL_PASSWORD
+
+  - type: pserv
+    name: geo-lo-mysql
+    runtime: image
+    plan: starter
+    image:
+      url: docker.io/library/mysql:8.4
+    disk:
+      name: geo-lo-mysql-data
+      mountPath: /var/lib/mysql
+      sizeGB: 10
+    envVars:
+      - key: MYSQL_DATABASE
+        value: geo_lo
+      - key: MYSQL_USER
+        value: geolo
+      - key: MYSQL_PASSWORD
+        generateValue: true
+      - key: MYSQL_ROOT_PASSWORD
+        generateValue: true

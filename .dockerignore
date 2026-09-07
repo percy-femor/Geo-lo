@@ -1,0 +1,6 @@
+.git
+.cursor
+agent-transcripts
+*.md
+env.example
+render.yaml

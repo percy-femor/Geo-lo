@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Geo-Lo • Owner Login</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root{--bg:#0b1020;--surface:#111827;--muted:#94a3b8;--text:#e5e7eb;--primary:#f59e0b;--card:rgba(17,24,39,0.88);--border:1px solid rgba(245,158,11,0.22);--shadow:0 20px 40px rgba(2,6,23,0.5);--radius:18px}
+        body.light{--bg:#f6f7fb;--surface:#ffffff;--muted:#64748b;--text:#0f172a;--primary:#d97706;--card:rgba(255,255,255,0.92);--border:1px solid rgba(217,119,6,0.2);--shadow:0 20px 40px rgba(2,6,23,0.1)}
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{font-family:'Poppins',sans-serif;background:radial-gradient(1200px 600px at 10% 10%,#3b2a10 0%,var(--bg) 42%),radial-gradient(800px 400px at 90% 10%,#1c1408 0%,transparent 45%);min-height:100vh;padding:24px;display:flex;align-items:center;justify-content:center;color:var(--text)}
+        .container{width:100%;max-width:480px;background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;border:var(--border)}
+        .header{padding:24px 20px;text-align:center;background:linear-gradient(90deg,rgba(245,158,11,.18),rgba(245,158,11,.05))}
+        .header h1{font-size:26px;margin-bottom:8px;font-weight:700}
+        .header p{font-size:14px;color:var(--muted)}
+        .content{padding:28px}
+        .input{width:100%;padding:16px 18px;border:2px solid rgba(148,163,184,.2);border-radius:14px;margin-bottom:18px;font-size:16px;background:rgba(255,255,255,.06);color:var(--text)}
+        .input:focus{border-color:var(--primary);outline:none;box-shadow:0 0 0 4px rgba(245,158,11,.15)}
+        .btn{width:100%;padding:16px;border:none;border-radius:14px;font-size:16px;font-weight:700;cursor:pointer;background:var(--primary);color:#111827}
+        .link{margin-top:14px;text-align:center;font-size:13px}
+        .link a{color:#fbbf24;text-decoration:none;font-weight:600}
+        .hint{font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.5}
+        .message{padding:14px;border-radius:14px;margin-bottom:18px;text-align:center;display:none;font-weight:600}
+        .message.error{background:#f8d7da;color:#721c24;display:block}
+        .input-with-icon{position:relative}
+        .input-with-icon input{padding-right:44px}
+        .toggle-btn{position:absolute;right:8px;top:50%;transform:translateY(-50%);background:transparent;border:none;cursor:pointer;color:var(--muted);padding:6px}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Geo-Lo owner</h1>
+            <p>Hook organizations onto Geo-Lo. This is not the company admin console.</p>
+        </div>
+        <div class="content">
+            <div id="msg" class="message"></div>
+            <p class="hint">Owner login: <strong>boss@geo-lo</strong> / <strong>boss1234</strong>. Organization admins have a separate page.</p>
+            <input type="text" class="input" id="loginEmail" placeholder="Owner email" autocomplete="username" inputmode="email" />
+            <div class="input-with-icon">
+                <input type="password" class="input" id="loginPassword" placeholder="Password" autocomplete="current-password" />
+                <button type="button" class="toggle-btn" id="togglePass">👁️</button>
+            </div>
+            <button class="btn" id="loginBtn" type="button">Sign in as owner</button>
+            <div class="link"><a href="admin-login.html">Organization admin login</a></div>
+            <div class="link"><a href="login.html">Worker login</a></div>
+        </div>
+    </div>
+    <script src="session.js?v=20260907render"></script>
+    <script>
+        (function () {
+            const theme = localStorage.getItem('geo_theme') || 'dark';
+            if (theme === 'light') document.body.classList.add('light');
+            if (new URLSearchParams(location.search).get('denied')) {
+                const msg = document.getElementById('msg');
+                msg.textContent = 'This page is for the Geo-Lo owner only.';
+                msg.className = 'message error';
+            }
+            if (GeoSession.getToken() && GeoSession.getRole() === 'admin') {
+                const user = GeoSession.getUser();
+                window.location.replace(user && user.privilege === 'super_admin' ? 'super.php' : 'admin.php');
+                return;
+            }
+            if (GeoSession.getRole() === 'worker') {
+                GeoSession.clear();
+            }
+            document.getElementById('togglePass').addEventListener('click', function () {
+                const i = document.getElementById('loginPassword');
+                const show = i.type === 'password';
+                i.type = show ? 'text' : 'password';
+                this.textContent = show ? '🙈' : '👁️';
+            });
+            document.getElementById('loginBtn').addEventListener('click', login);
+            document.getElementById('loginPassword').addEventListener('keydown', (e) => { if (e.key === 'Enter') login(); });
+            async function login() {
+                const email = document.getElementById('loginEmail').value.trim();
+                const password = document.getElementById('loginPassword').value;
+                const msg = document.getElementById('msg');
+                if (!email || !password) { msg.textContent = 'Enter email and password'; msg.className = 'message error'; return; }
+                try {
+                    const fingerprint = await GeoSession.fingerprint();
+                    const res = await fetch(GeoSession.apiUrl('auth.php'), {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include',
+                        body: JSON.stringify({ role: 'admin', console: 'super', email, password, device_fingerprint: fingerprint })
+                    });
+                    const j = await res.json();
+                    if (!res.ok || j.error || j.role !== 'admin' || ((j.user && j.user.privilege) || j.privilege) !== 'super_admin') {
+                        msg.textContent = j.error || 'Invalid owner credentials';
+                        msg.className = 'message error';
+                        return;
+                    }
+                    const user = Object.assign({}, j.user || {}, { privilege: (j.user && j.user.privilege) || j.privilege || 'super_admin' });
+                    GeoSession.set(j.token, 'admin', user);
+                    window.location.replace('super.php');
+                } catch (e) {
+                    msg.textContent = 'Network error';
+                    msg.className = 'message error';
+                }
+            }
+        })();
+    </script>
+</body>
+</html>

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Geo-Lo • Login</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root{--bg:#0f172a;--surface:#111827;--muted:#94a3b8;--text:#e5e7eb;--primary:#6366f1;--primary-press:#4f46e5;--card:rgba(17,24,39,0.85);--border:1px solid rgba(148,163,184,0.15);--shadow:0 20px 40px rgba(2,6,23,0.5);--radius:18px}
+        body.light{--bg:#f6f7fb;--surface:#ffffff;--muted:#64748b;--text:#0f172a;--primary:#3b82f6;--primary-press:#2563eb;--card:rgba(255,255,255,0.9);--border:1px solid rgba(100,116,139,0.15);--shadow:0 20px 40px rgba(2,6,23,0.1)}
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{font-family:'Poppins',sans-serif;background:radial-gradient(1200px 600px at 10% 10%,#0b1020 0%,var(--bg) 40%),radial-gradient(800px 400px at 90% 10%,#181d31 0%,transparent 45%);min-height:100vh;padding:24px;display:flex;align-items:center;justify-content:center;color:var(--text)}
+        .container{width:100%;max-width:480px;background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;border:var(--border)}
+        .header{padding:24px 20px;text-align:center;background:linear-gradient(90deg,rgba(99,102,241,.15),rgba(99,102,241,.05))}
+        .header h1{font-size:26px;margin-bottom:8px;font-weight:700}
+        .header p{font-size:14px;opacity:.85;font-weight:500;color:var(--muted)}
+        .content{padding:28px}
+        .input{width:100%;padding:16px 18px;border:2px solid rgba(148,163,184,.2);border-radius:14px;margin-bottom:18px;font-size:16px;background:rgba(255,255,255,.06);color:var(--text);transition:.2s}
+        .input:focus{border-color:var(--primary);outline:none;box-shadow:0 0 0 4px rgba(99,102,241,.15)}
+        .btn{width:100%;padding:16px;border:none;border-radius:14px;font-size:16px;font-weight:700;cursor:pointer;transition:.2s;letter-spacing:.4px;background:var(--primary);color:#fff}
+        .btn:active{transform:scale(.98)}
+        .link{margin-top:12px;text-align:center}
+        .link a{color:#3498db;text-decoration:none;font-weight:600}
+        .message{padding:14px;border-radius:14px;margin-bottom:18px;text-align:center;display:none;font-weight:600}
+        .message.error{background:#f8d7da;color:#721c24;border:1px solid #f5c6cb;display:block}
+        .input-with-icon{position:relative}
+        .input-with-icon input{padding-right:44px}
+        .toggle-btn{position:absolute;right:8px;top:50%;transform:translateY(-50%);background:transparent;border:none;cursor:pointer;font-size:1rem;color:var(--muted);padding:6px}
+    </style>
+    <script src="session.js?v=20260907render"></script>
+    <script>
+        (function(){
+            const d=localStorage.getItem('geo_theme')||'dark';
+            if(d==='light')document.body?.classList?.add('light');
+            localStorage.removeItem('authWorker');
+        })();
+        window.addEventListener('DOMContentLoaded',function(){
+            if(new URLSearchParams(location.search).get('denied')==='1'){
+                const msg=document.getElementById('msg');
+                if(msg){msg.textContent='Sign in with a worker account to open attendance.';msg.className='message error';}
+            }
+        });
+        async function login(){
+            const email=document.getElementById('loginEmail').value.trim();
+            const pin=document.getElementById('loginPin').value.trim();
+            const msg=document.getElementById('msg');
+            if(!email||!pin){msg.textContent='Enter email and PIN';msg.className='message error';return}
+            try{
+                const fingerprint=await GeoSession.fingerprint();
+                const res=await fetch(GeoSession.apiUrl('auth.php'),{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({email,pin,device_fingerprint:fingerprint})});
+                const j=await res.json();
+                if(!res.ok||j.error){msg.textContent=j.error||'Invalid credentials';msg.className='message error';return}
+                GeoSession.set(j.token,'worker',j.user||j);
+                window.location.href='worker.php';
+            }catch(e){msg.textContent='Network error';msg.className='message error'}
+        }
+    </script>
+    </head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Geo-Lo Login</h1>
+            <p>Access your attendance</p>
+        </div>
+        <div class="content">
+            <div id="msg" class="message"></div>
+            <input type="email" class="input" id="loginEmail" placeholder="Email" />
+            <div class="input-with-icon">
+                <input type="password" class="input" id="loginPin" placeholder="PIN" />
+                <button type="button" class="toggle-btn" onclick="(function(el){var i=document.getElementById('loginPin');if(!i)return;var s=i.getAttribute('type')==='password';i.setAttribute('type', s?'text':'password');el.textContent=s?'🙈':'👁️';})(this)">👁️</button>
+            </div>
+            <button class="btn" onclick="login()">Login</button>
+            <div class="link"><a href="reset.html">Forgot PIN or Password?</a></div>
+            <div class="link"><a href="admin-login.html">Organization admin</a></div>
+            <div class="link"><a href="super-login.html">Geo-Lo owner</a></div>
+        </div>
+    </div>
+</body>
+</html>

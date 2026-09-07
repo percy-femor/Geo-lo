@@ -1,0 +1,40 @@
+# Secrets and local env
+.env
+.env.*
+!.env.example
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Editors / IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Cursor
+.cursor/
+.cursorignore
+
+# Logs and caches
+*.log
+logs/
+tmp/
+temp/
+.cache/
+
+# PHP / Composer
+/vendor/
+
+# Uploads and generated files
+uploads/
+*.tmp
+*.bak
+*.old
+
+# Local dumps
+*.sql.gz
+*.sql.zip
