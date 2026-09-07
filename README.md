@@ -36,34 +36,33 @@ Existing installs keep current workers under “Existing organization” until y
 2. Copy `env.example` to `.env` in the project root. Local XAMPP often uses `root` with a blank password. If you set a MySQL password, put the **same** value in `.env` as `DB_PASSWORD`. That is the app setting — it is not a column inside the `geo_lo` tables.
 3. Use HTTPS in production so the browser can access GPS and camera.
 
-## Run live on Render
+## Run live on Render (free)
 
-Render does not have a native PHP runtime, so this repo ships a Docker image (`php:8.2-apache`) plus a MySQL private service.
+Render has **no free MySQL**. A MySQL private service on Render needs a paid disk, so this project does not create one.
 
-1. Push this project to a GitHub repository.
-2. In [Render](https://dashboard.render.com), click **New** → **Blueprint** and point it at that repo (`render.yaml`).  
-   Or create the two services by hand:
-   - **Private Service** named `geo-lo-mysql`, Docker image `mysql:8.4`, disk mounted at `/var/lib/mysql` (10 GB). Set `MYSQL_DATABASE=geo_lo`, `MYSQL_USER=geolo`, `MYSQL_PASSWORD`, and `MYSQL_ROOT_PASSWORD`.
-   - **Web Service** from the same GitHub repo, runtime **Docker**, health check `/login.html`.
-3. On the web service, set:
+Free setup = **Render free web service** (this PHP app) + a **free MySQL somewhere else**. [TiDB Cloud Starter](https://tidbcloud.com/) is MySQL-compatible and has a free quota. Do not put the database on the Render web instance: free web disks are wiped when the app sleeps or redeploys.
+
+1. Create a free [TiDB Cloud](https://tidbcloud.com/) account (no credit card required for the Starter free quota).
+2. Create a **Starter** cluster. Open **Connect**, choose **Public**, and copy host, port, user, password. Port is usually **`4000`**, not 3306. Create a database named `geo_lo` (or use the default `test` name and put that in `DB_NAME`).
+3. Push this project to GitHub, then in [Render](https://dashboard.render.com) click **New** → **Blueprint** and select the repo. Choose the **Free** plan for `geo-lo`. When prompted, paste:
 
    | Variable | Value |
    | --- | --- |
-   | `DB_HOST` | Internal hostname of the MySQL service (shown on that service’s page) |
-   | `DB_PORT` | `3306` |
-   | `DB_NAME` | `geo_lo` |
-   | `DB_USER` | `geolo` |
-   | `DB_PASSWORD` | The MySQL user password |
+   | `DB_HOST` | TiDB public host |
+   | `DB_PORT` | `4000` |
+   | `DB_NAME` | `geo_lo` (or `test`) |
+   | `DB_USER` | TiDB user |
+   | `DB_PASSWORD` | TiDB password |
 
-   You can also point `DB_*` at any other hosted MySQL. Optional: `APP_URL=https://your-service.onrender.com`.
-4. Wait until MySQL is live, then deploy (or redeploy) the web service. The first API request creates tables and the owner account.
+   `DB_SSL=1` is set automatically. Optional: `APP_URL=https://your-service.onrender.com`.
+4. Wait until the web service is live. The first API request creates tables and the owner account.
 5. Open:
 
    - Worker: `https://your-service.onrender.com/login.html`
    - Organization admin: `https://your-service.onrender.com/admin-login.html`
    - Geo-Lo owner: `https://your-service.onrender.com/super-login.html`
 
-MySQL on Render needs a paid private service with a disk. Change the owner password after the first live login.
+Free Render apps sleep after idle time; the first request can take about a minute. Change the owner password after the first live login.
 
 ## API notes
 

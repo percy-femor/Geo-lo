@@ -19,6 +19,30 @@ function loadDotEnv($path) {
 }
 loadDotEnv(dirname(__DIR__) . DIRECTORY_SEPARATOR . '.env');
 
+function envFlagEnabled($name) {
+    $value = strtolower(trim((string)(getenv($name) ?: '')));
+    return in_array($value, ['1', 'true', 'yes', 'on'], true);
+}
+
+function pdoMysqlOptions() {
+    $options = [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION];
+    if (!envFlagEnabled('DB_SSL')) {
+        return $options;
+    }
+    $ca = trim((string)(getenv('DB_SSL_CA') ?: ''));
+    if ($ca === '') {
+        $ca = '/etc/ssl/certs/ca-certificates.crt';
+    }
+    if (is_readable($ca)) {
+        $options[PDO::MYSQL_ATTR_SSL_CA] = $ca;
+        $options[PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT] = true;
+    } else {
+        $options[PDO::MYSQL_ATTR_SSL_CA] = '';
+        $options[PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT] = false;
+    }
+    return $options;
+}
+
 class Database {
     private $host;
     private $port;
@@ -39,7 +63,7 @@ class Database {
         $this->conn = null;
         try {
             $dsn = "mysql:host={$this->host};port={$this->port};dbname={$this->db_name};charset=utf8mb4";
-            $this->conn = new PDO($dsn, $this->username, $this->password);
+            $this->conn = new PDO($dsn, $this->username, $this->password, pdoMysqlOptions());
             $this->conn->exec("set names utf8mb4");
             $this->conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
             ensureGeoLoSchema($this->conn);
