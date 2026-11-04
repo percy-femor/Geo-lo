@@ -145,6 +145,140 @@ function calculateDistance($lat1, $lon1, $lat2, $lon2) {
     return $angle * $earthRadius;
 }
 
+// Decode a stored polygon (JSON text or array) into a list of ['lat' => float, 'lng' => float].
+// Returns null when there are fewer than 3 valid points.
+function decodeLocationPolygon($value) {
+    if (empty($value)) return null;
+    $decoded = is_array($value) ? $value : json_decode((string)$value, true);
+    if (!is_array($decoded)) return null;
+    $points = [];
+    foreach ($decoded as $point) {
+        if (!is_array($point) || !isset($point['lat'], $point['lng'])) continue;
+        if (!is_numeric($point['lat']) || !is_numeric($point['lng'])) continue;
+        $points[] = ['lat' => (float)$point['lat'], 'lng' => (float)$point['lng']];
+    }
+    return count($points) >= 3 ? $points : null;
+}
+
+// Approximate area of a polygon in square meters (local equirectangular projection).
+function polygonAreaSquareMeters($polygon) {
+    $n = count($polygon);
+    if ($n < 3) return 0.0;
+    $rad = M_PI / 180.0;
+    $earth = 6371000.0;
+    $latSum = 0.0;
+    foreach ($polygon as $point) { $latSum += (float)$point['lat']; }
+    $cos = cos(($latSum / $n) * $rad);
+    $x = [];
+    $y = [];
+    foreach ($polygon as $point) {
+        $x[] = (float)$point['lng'] * $rad * $cos * $earth;
+        $y[] = (float)$point['lat'] * $rad * $earth;
+    }
+    $area = 0.0;
+    for ($i = 0, $j = $n - 1; $i < $n; $j = $i++) {
+        $area += ($x[$j] * $y[$i]) - ($x[$i] * $y[$j]);
+    }
+    return abs($area) / 2.0;
+}
+
+// Validate polygon input from a request. Returns:
+//   null  -> no polygon supplied
+//   array -> normalized polygon with at least $minPoints points and a real area
+//   false -> polygon supplied but invalid (too few / malformed / overlapping points)
+function normalizeLocationPolygon($value, $minPoints = 4) {
+    if ($value === null || $value === '' || $value === []) return null;
+    $decoded = is_array($value) ? $value : json_decode((string)$value, true);
+    if (!is_array($decoded)) return false;
+    $points = [];
+    foreach ($decoded as $point) {
+        if (!is_array($point) || !isset($point['lat'], $point['lng'])) return false;
+        if (!is_numeric($point['lat']) || !is_numeric($point['lng'])) return false;
+        $lat = (float)$point['lat'];
+        $lng = (float)$point['lng'];
+        if ($lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) return false;
+        $points[] = ['lat' => round($lat, 8), 'lng' => round($lng, 8)];
+    }
+    if (count($points) < $minPoints) return false;
+    // Reject degenerate polygons (identical or collinear points) that enclose no real area.
+    if (polygonAreaSquareMeters($points) < 1.0) return false;
+    return $points;
+}
+
+// Simple average centroid of a polygon, used as the location center point.
+function polygonCentroid($polygon) {
+    $count = count($polygon);
+    if ($count === 0) return ['lat' => 0.0, 'lng' => 0.0];
+    $lat = 0.0;
+    $lng = 0.0;
+    foreach ($polygon as $point) {
+        $lat += (float)$point['lat'];
+        $lng += (float)$point['lng'];
+    }
+    return ['lat' => $lat / $count, 'lng' => $lng / $count];
+}
+
+// Ray-casting point-in-polygon test.
+function geoPointInPolygon($lat, $lng, $polygon) {
+    $n = count($polygon);
+    if ($n < 3) return false;
+    $inside = false;
+    for ($i = 0, $j = $n - 1; $i < $n; $j = $i++) {
+        $yi = (float)$polygon[$i]['lat'];
+        $xi = (float)$polygon[$i]['lng'];
+        $yj = (float)$polygon[$j]['lat'];
+        $xj = (float)$polygon[$j]['lng'];
+        $denom = ($yj - $yi);
+        if (abs($denom) < 1e-12) $denom = 1e-12;
+        if ((($yi > $lat) !== ($yj > $lat)) && ($lng < ($xj - $xi) * ($lat - $yi) / $denom + $xi)) {
+            $inside = !$inside;
+        }
+    }
+    return $inside;
+}
+
+// Minimum distance (meters) from a point to a polygon edge (or vertex).
+function geoDistanceToPolygon($lat, $lng, $polygon) {
+    $n = count($polygon);
+    if ($n === 0) return null;
+    if ($n < 3) {
+        $min = null;
+        foreach ($polygon as $point) {
+            $d = calculateDistance($lat, $lng, $point['lat'], $point['lng']);
+            if ($min === null || $d < $min) $min = $d;
+        }
+        return $min;
+    }
+    $min = null;
+    for ($i = 0, $j = $n - 1; $i < $n; $j = $i++) {
+        $d = geoPointToSegmentMeters($lat, $lng, $polygon[$j]['lat'], $polygon[$j]['lng'], $polygon[$i]['lat'], $polygon[$i]['lng']);
+        if ($min === null || $d < $min) $min = $d;
+    }
+    return $min;
+}
+
+// Distance (meters) from a point to a line segment using a local flat projection.
+function geoPointToSegmentMeters($plat, $plng, $alat, $alng, $blat, $blng) {
+    $rad = M_PI / 180.0;
+    $earth = 6371000.0;
+    $cos = cos($plat * $rad);
+    $px = $plng * $rad * $cos * $earth;
+    $py = $plat * $rad * $earth;
+    $ax = $alng * $rad * $cos * $earth;
+    $ay = $alat * $rad * $earth;
+    $bx = $blng * $rad * $cos * $earth;
+    $by = $blat * $rad * $earth;
+    $dx = $bx - $ax;
+    $dy = $by - $ay;
+    $len2 = $dx * $dx + $dy * $dy;
+    if ($len2 <= 0) return calculateDistance($plat, $plng, $alat, $alng);
+    $t = (($px - $ax) * $dx + ($py - $ay) * $dy) / $len2;
+    $t = max(0.0, min(1.0, $t));
+    $cx = $ax + $t * $dx;
+    $cy = $ay + $t * $dy;
+    return sqrt(($px - $cx) ** 2 + ($py - $cy) ** 2);
+}
+
 // Get JSON input
 function getJsonInput() {
     $input = file_get_contents('php://input');
@@ -285,6 +419,9 @@ function ensureGeoLoSchema($db) {
 
     if (tableExists($db, 'locations') && !columnExists($db, 'locations', 'organization_id')) {
         ensureColumn($db, 'locations', "organization_id INT NULL");
+    }
+    if (tableExists($db, 'locations') && !columnExists($db, 'locations', 'polygon')) {
+        ensureColumn($db, 'locations', "polygon TEXT NULL");
     }
     if (tableExists($db, 'shifts') && !columnExists($db, 'shifts', 'organization_id')) {
         ensureColumn($db, 'shifts', "organization_id INT NULL");

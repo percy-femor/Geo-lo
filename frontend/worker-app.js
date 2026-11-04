@@ -107,17 +107,38 @@ class WorkerApp {
             this.updateLocationStatus(false, 'Waiting for location or no active workplaces');
             return;
         }
+        // Small grace zone so minor GPS jitter at the boundary does not block a valid punch.
+        const grace = Math.min(Number(this.currentAccuracy || 0), 10);
+        let nearest = { distance: Infinity, location: null };
+        let misconfigured = false;
         for (const location of this.workplaceLocations) {
+            const isActiveVal = String(location.is_active).toLowerCase();
+            const isActive = isActiveVal === '1' || isActiveVal === 'true' || location.is_active === 1 || location.is_active === true;
+            if (!isActive) continue;
+
+            const polygon = this.normalizePolygon(location.polygon);
+            if (polygon) {
+                // Ignore degenerate polygons (points overlapping / no real area).
+                if (this.polygonAreaSquareMeters(polygon) < 1) { misconfigured = true; continue; }
+                const inside = this.pointInPolygon(this.currentLocation.latitude, this.currentLocation.longitude, polygon);
+                const edge = this.distanceToPolygon(this.currentLocation.latitude, this.currentLocation.longitude, polygon);
+                if (edge !== null && edge < nearest.distance) nearest = { distance: edge, location };
+                if (inside || (edge !== null && edge <= grace)) {
+                    this.isWithinGeofence = true;
+                    this.updateLocationStatus(true, `At ${location.name}`, edge ?? 0);
+                    return;
+                }
+                continue;
+            }
+
             const distance = this.calculateDistance(
                 this.currentLocation.latitude,
                 this.currentLocation.longitude,
                 parseFloat(location.latitude),
                 parseFloat(location.longitude)
             );
-            const isActiveVal = String(location.is_active).toLowerCase();
-            const isActive = isActiveVal === '1' || isActiveVal === 'true' || location.is_active === 1 || location.is_active === true;
-            if (!isActive) continue;
-            const effectiveRadius = Number(location.radius_meters || 100) + Math.min(Number(this.currentAccuracy || 0), 800);
+            if (distance < nearest.distance) nearest = { distance, location };
+            const effectiveRadius = Number(location.radius_meters || 100) + grace;
             if (distance <= effectiveRadius) {
                 this.isWithinGeofence = true;
                 this.updateLocationStatus(true, `At ${location.name}`, distance);
@@ -125,21 +146,82 @@ class WorkerApp {
             }
         }
         this.isWithinGeofence = false;
-        let nearest = { distance: Infinity, location: null };
-        this.workplaceLocations.forEach((location) => {
-            const distance = this.calculateDistance(
-                this.currentLocation.latitude,
-                this.currentLocation.longitude,
-                parseFloat(location.latitude),
-                parseFloat(location.longitude)
-            );
-            if (distance < nearest.distance) nearest = { location, distance };
-        });
+        if (misconfigured && !nearest.location) {
+            this.updateLocationStatus(false, 'A work area geofence is not set up correctly. Please contact your admin.');
+            return;
+        }
         const accTxt = this.currentAccuracy ? ` | accuracy ±${Math.round(this.currentAccuracy)}m` : '';
         const msg = nearest.location
             ? `Outside work area. Nearest: ${nearest.location.name} (${Math.round(nearest.distance)}m away${accTxt})`
             : `Outside work area${accTxt}.`;
         this.updateLocationStatus(false, msg);
+    }
+
+    polygonAreaSquareMeters(points) {
+        if (!Array.isArray(points) || points.length < 3) return 0;
+        const rad = Math.PI / 180;
+        const earth = 6371000;
+        let latSum = 0;
+        points.forEach((p) => { latSum += p.lat; });
+        const cos = Math.cos((latSum / points.length) * rad);
+        const xy = points.map((p) => ({ x: p.lng * rad * cos * earth, y: p.lat * rad * earth }));
+        let area = 0;
+        for (let i = 0, j = xy.length - 1; i < xy.length; j = i++) {
+            area += (xy[j].x * xy[i].y) - (xy[i].x * xy[j].y);
+        }
+        return Math.abs(area) / 2;
+    }
+
+    normalizePolygon(value) {
+        if (!Array.isArray(value)) return null;
+        const points = value
+            .filter((p) => p && p.lat !== undefined && p.lng !== undefined && !Number.isNaN(Number(p.lat)) && !Number.isNaN(Number(p.lng)))
+            .map((p) => ({ lat: Number(p.lat), lng: Number(p.lng) }));
+        return points.length >= 3 ? points : null;
+    }
+
+    pointInPolygon(lat, lng, polygon) {
+        let inside = false;
+        for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+            const yi = polygon[i].lat;
+            const xi = polygon[i].lng;
+            const yj = polygon[j].lat;
+            const xj = polygon[j].lng;
+            const intersect = ((yi > lat) !== (yj > lat)) &&
+                (lng < (xj - xi) * (lat - yi) / ((yj - yi) || 1e-12) + xi);
+            if (intersect) inside = !inside;
+        }
+        return inside;
+    }
+
+    distanceToPolygon(lat, lng, polygon) {
+        let min = Infinity;
+        for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+            const d = this.distanceToSegment(lat, lng, polygon[j].lat, polygon[j].lng, polygon[i].lat, polygon[i].lng);
+            if (d < min) min = d;
+        }
+        return Number.isFinite(min) ? min : null;
+    }
+
+    distanceToSegment(plat, plng, alat, alng, blat, blng) {
+        const rad = Math.PI / 180;
+        const earth = 6371000;
+        const cos = Math.cos(plat * rad);
+        const px = plng * rad * cos * earth;
+        const py = plat * rad * earth;
+        const ax = alng * rad * cos * earth;
+        const ay = alat * rad * earth;
+        const bx = blng * rad * cos * earth;
+        const by = blat * rad * earth;
+        const dx = bx - ax;
+        const dy = by - ay;
+        const len2 = dx * dx + dy * dy;
+        if (len2 <= 0) return this.calculateDistance(plat, plng, alat, alng);
+        let t = ((px - ax) * dx + (py - ay) * dy) / len2;
+        t = Math.max(0, Math.min(1, t));
+        const cx = ax + t * dx;
+        const cy = ay + t * dy;
+        return Math.sqrt((px - cx) ** 2 + (py - cy) ** 2);
     }
 
     calculateDistance(lat1, lon1, lat2, lon2) {
@@ -161,7 +243,9 @@ class WorkerApp {
         if (isWithin) {
             statusDot.className = 'status-dot status-ok';
             const acc = this.currentAccuracy ? ` (±${Math.round(this.currentAccuracy)}m)` : '';
-            distanceElement.textContent = `You are ${Math.round(distance)}m from center${acc}`;
+            distanceElement.textContent = distance !== null && Number.isFinite(distance)
+                ? `Inside the work area · ${Math.round(distance)}m to the boundary${acc}`
+                : `Inside the work area${acc}`;
             distanceElement.style.color = '#28a745';
         } else {
             statusDot.className = 'status-dot status-error';

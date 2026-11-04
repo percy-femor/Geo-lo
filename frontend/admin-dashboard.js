@@ -12,11 +12,12 @@ class AdminDashboard {
         this.currentEditingId = null;
         this.currentLocation = null;
         this.map = null;
-        this.marker = null;
-        this.radiusCircle = null;
+        this.polygonPoints = [];
+        this.polygonLayer = null;
+        this.polygonMarkers = [];
         this.tileLayer = null;
-        this.locationWatchId = null;
-        this.isTracking = false;
+        this.searchMarker = null;
+        this.legacyRadius = null;
         this.confirmResolver = null;
         this.pageCopy = {
             dashboard: ['Dashboard', 'Who is on site, who is late, and today’s exceptions'],
@@ -122,7 +123,6 @@ class AdminDashboard {
             e.preventDefault();
             this.handleLocationSubmit();
         });
-        document.getElementById('locationRadius')?.addEventListener('input', () => this.updateRadiusCircle());
         document.getElementById('toggleWorkerPassword')?.addEventListener('click', (e) => {
             const input = document.getElementById('workerPassword');
             if (!input) return;
@@ -146,7 +146,7 @@ class AdminDashboard {
         document.getElementById('correctCancel')?.addEventListener('click', () => document.getElementById('correctModal')?.classList.remove('show'));
         document.getElementById('correctSave')?.addEventListener('click', () => this.saveCorrection());
 
-        ['employeeId', 'workerName', 'workerEmail', 'workerPin', 'workerPassword', 'locationName', 'locationLat', 'locationLng', 'locationRadius', 'workerSelectReport']
+        ['employeeId', 'workerName', 'workerEmail', 'workerPin', 'workerPassword', 'locationName', 'locationPolygon', 'workerSelectReport']
             .forEach((id) => {
                 document.getElementById(id)?.addEventListener('input', () => this.clearFieldError(id));
                 document.getElementById(id)?.addEventListener('change', () => this.clearFieldError(id));
@@ -389,96 +389,76 @@ class AdminDashboard {
         }
     }
 
-    /* ---------- Location detection ---------- */
+    /* ---------- Workspace polygon capture ---------- */
 
     setupEnhancedLocationGetter() {
         this.setupLocationButtonListeners();
+        this.updatePolygonUI();
     }
 
     setupLocationButtonListeners() {
-        document.getElementById('startAutoLocationBtn')?.addEventListener('click', () => this.startAutoLocation());
+        document.getElementById('startAutoLocationBtn')?.addEventListener('click', () => this.addPointAtMyLocation());
         document.getElementById('openMapPickerBtn')?.addEventListener('click', () => this.openMapPicker());
-        document.getElementById('useDefaultOfficeBtn')?.addEventListener('click', () => this.useDefaultOffice());
-        document.getElementById('stopAutoLocationBtn')?.addEventListener('click', () => this.stopAutoLocation());
+        document.getElementById('undoPolygonBtn')?.addEventListener('click', () => this.undoPolygonPoint());
+        document.getElementById('clearPolygonBtn')?.addEventListener('click', () => this.clearPolygon());
+        document.getElementById('mapSearchBtn')?.addEventListener('click', () => this.searchMapLocation());
+        document.getElementById('mapSearchInput')?.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                this.searchMapLocation();
+            }
+        });
     }
 
-    startAutoLocation() {
+    addPointAtMyLocation() {
         if (!navigator.geolocation) {
             this.showLocationMessage('Geolocation is not supported by this browser.', 'error');
             this.toast('Geolocation is not supported by this browser.', 'error');
             return;
         }
-
         const options = { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 };
-        this.showLocationMessage('Detecting your location…', 'info');
-        this.updateAutoLocationStatus('Detecting your location…', 'active');
-
+        this.showLocationMessage('Capturing your position…', 'info');
+        this.updateAutoLocationStatus('Capturing your position…', 'active');
         navigator.geolocation.getCurrentPosition(
             (position) => {
-                this.handleLocationSuccess(position);
-                this.locationWatchId = navigator.geolocation.watchPosition(
-                    (pos) => this.handleLocationSuccess(pos),
-                    (error) => this.handleLocationError(error),
-                    options
-                );
-                this.isTracking = true;
-                this.updateLocationButtons(true);
-                this.showLocationMessage('Location tracking is active. Coordinates update as you move.', 'success');
-                this.toast('Location tracking started.', 'success');
+                const lat = position.coords.latitude;
+                const lng = position.coords.longitude;
+                this.currentLocation = {
+                    latitude: lat,
+                    longitude: lng,
+                    accuracy: position.coords.accuracy
+                };
+                this.updateAccuracyDisplay();
+                this.updateAutoLocationStatus('Point added', 'active');
+
+                const last = this.polygonPoints[this.polygonPoints.length - 1];
+                if (last && this.calculateDistance(last.lat, last.lng, lat, lng) < 1) {
+                    this.showLocationMessage(
+                        'Your device reported the same location as the previous point. Laptops and desktops have no GPS, so the browser returns one fixed approximate location. Use “Pick points on map” to click each corner of the workspace.',
+                        'error'
+                    );
+                    this.updateAutoLocationStatus('Location not changing', 'inactive');
+                    return;
+                }
+                if (this.addPolygonPoint(lat, lng)) {
+                    this.showLocationMessage(`Point ${this.polygonPoints.length} added from your current position.`, 'success');
+                }
             },
             (error) => this.handleLocationError(error),
             options
         );
     }
 
-    handleLocationSuccess(position) {
-        this.currentLocation = {
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-            accuracy: position.coords.accuracy
-        };
-        this.setFormCoordinates(this.currentLocation.latitude, this.currentLocation.longitude);
-        this.updateCoordinatesDisplay();
-        this.updateAccuracyDisplay();
-        this.updateAutoLocationStatus('Location tracking active', 'active');
-        this.enableLocationSubmit();
-        this.clearFieldError('locationLat');
-        this.clearFieldError('locationLng');
-        if (this.map) {
-            this.map.setView([this.currentLocation.latitude, this.currentLocation.longitude], 16);
-            this.updateMapMarker([this.currentLocation.latitude, this.currentLocation.longitude]);
-        }
-    }
-
     handleLocationError(error) {
         const messages = {
             1: 'Location access denied. Allow location in your browser settings and try again.',
             2: 'Location unavailable. Check GPS or Wi-Fi and try again.',
-            3: 'Location request timed out. Try again or pick a point on the map.'
+            3: 'Location request timed out. Try again or pick points on the map.'
         };
         const message = messages[error.code] || 'Unable to get your location.';
         this.showLocationMessage(message, 'error');
         this.toast(message, 'error', 'Location failed');
-        this.updateAutoLocationStatus('Location detection failed', 'inactive');
-        this.updateLocationButtons(false);
-    }
-
-    stopAutoLocation() {
-        if (this.locationWatchId) {
-            navigator.geolocation.clearWatch(this.locationWatchId);
-            this.locationWatchId = null;
-        }
-        this.isTracking = false;
-        this.updateLocationButtons(false);
-        this.showLocationMessage('Location tracking stopped.', 'info');
-        this.updateAutoLocationStatus('Ready to detect your location', 'inactive');
-    }
-
-    updateLocationButtons(isTracking) {
-        const startBtn = document.getElementById('startAutoLocationBtn');
-        const stopBtn = document.getElementById('stopAutoLocationBtn');
-        if (startBtn) startBtn.style.display = isTracking ? 'none' : 'inline-flex';
-        if (stopBtn) stopBtn.style.display = isTracking ? 'inline-flex' : 'none';
+        this.updateAutoLocationStatus('Location capture failed', 'inactive');
     }
 
     updateAutoLocationStatus(message, status) {
@@ -537,7 +517,7 @@ class AdminDashboard {
         this.tileLayer = L.tileLayer(url, { attribution: '© OpenStreetMap' }).addTo(this.map);
     }
 
-    openMapPicker() {
+    ensureMap() {
         const mapContainer = document.getElementById('mapContainer');
         mapContainer?.classList.add('open');
 
@@ -545,66 +525,275 @@ class AdminDashboard {
             this.map = L.map('mapContainer').setView([40.7128, -74.0060], 13);
             this.refreshMapTiles();
             this.map.on('click', (e) => {
-                this.currentLocation = {
-                    latitude: e.latlng.lat,
-                    longitude: e.latlng.lng,
-                    accuracy: this.currentLocation?.accuracy
-                };
-                this.setFormCoordinates(e.latlng.lat, e.latlng.lng);
-                this.updateCoordinatesDisplay();
-                this.updateMapMarker(e.latlng);
-                this.enableLocationSubmit();
-                this.clearFieldError('locationLat');
-                this.clearFieldError('locationLng');
-                this.showLocationMessage('Map point selected. You can still drag the pin by clicking elsewhere.', 'success');
+                if (this.addPolygonPoint(e.latlng.lat, e.latlng.lng)) {
+                    this.showLocationMessage(`Point ${this.polygonPoints.length} added. Keep clicking to trace the workspace boundary.`, 'success');
+                }
             });
+            const search = document.getElementById('mapSearch');
+            if (search) {
+                L.DomEvent.disableClickPropagation(search);
+                L.DomEvent.disableScrollPropagation(search);
+            }
         }
 
         setTimeout(() => this.map.invalidateSize(), 320);
+        return this.map;
+    }
 
-        if (this.currentLocation) {
+    openMapPicker() {
+        this.ensureMap();
+        this.renderPolygon();
+        const points = this.polygonPoints;
+        if (points.length) {
+            this.map.fitBounds(points.map((p) => [p.lat, p.lng]), { padding: [40, 40], maxZoom: 18 });
+        } else if (this.currentLocation) {
             this.map.setView([this.currentLocation.latitude, this.currentLocation.longitude], 16);
-            this.updateMapMarker([this.currentLocation.latitude, this.currentLocation.longitude]);
         }
     }
 
-    updateMapMarker(latlng) {
-        if (this.marker) this.map.removeLayer(this.marker);
-        const point = Array.isArray(latlng) ? { lat: latlng[0], lng: latlng[1] } : latlng;
-        this.marker = L.marker(point).addTo(this.map)
-            .bindPopup(`
-                <strong>Selected location</strong><br>
-                Lat ${Number(point.lat).toFixed(6)}<br>
-                Lng ${Number(point.lng).toFixed(6)}
-            `)
-            .openPopup();
-        this.updateRadiusCircle();
+    isValidLatLng(lat, lng) {
+        return Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
     }
 
-    updateRadiusCircle() {
-        if (!this.map || !this.marker) return;
-        if (this.radiusCircle) this.map.removeLayer(this.radiusCircle);
-        const latlng = this.marker.getLatLng();
-        const radius = parseInt(document.getElementById('locationRadius')?.value, 10) || 100;
-        this.radiusCircle = L.circle(latlng, {
-            color: '#6366f1',
-            fillColor: '#6366f1',
-            fillOpacity: 0.18,
-            radius
-        }).addTo(this.map);
+    extractCoordinates(text) {
+        const patterns = [
+            /!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/,
+            /@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/,
+            /[?&](?:q|ll|query|center|daddr|destination)=(?:loc:)?(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/i,
+            /^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/
+        ];
+        for (const pattern of patterns) {
+            const match = text.match(pattern);
+            if (match) {
+                const lat = Number(match[1]);
+                const lng = Number(match[2]);
+                if (this.isValidLatLng(lat, lng)) return { lat, lng };
+            }
+        }
+        return null;
     }
 
-    useDefaultOffice() {
-        const defaultLocation = { latitude: 40.7128, longitude: -74.0060 };
-        this.currentLocation = { ...defaultLocation, accuracy: null };
-        this.setFormCoordinates(defaultLocation.latitude, defaultLocation.longitude);
-        this.updateCoordinatesDisplay();
-        this.showLocationMessage('Default office coordinates loaded. Adjust on the map if needed.', 'success');
-        this.toast('Default office coordinates loaded.', 'info');
-        this.enableLocationSubmit();
+    async geocodePlace(query) {
+        const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(query)}`;
+        const response = await fetch(url, { headers: { Accept: 'application/json' } });
+        if (!response.ok) throw new Error('Geocoding failed');
+        const results = await response.json();
+        if (!Array.isArray(results) || !results.length) return null;
+        const first = results[0];
+        const lat = Number(first.lat);
+        const lng = Number(first.lon);
+        if (!this.isValidLatLng(lat, lng)) return null;
+        let bounds = null;
+        if (Array.isArray(first.boundingbox) && first.boundingbox.length === 4) {
+            const [south, north, west, east] = first.boundingbox.map(Number);
+            if ([south, north, west, east].every(Number.isFinite)) {
+                bounds = [[south, west], [north, east]];
+            }
+        }
+        return { lat, lng, label: first.display_name || query, bounds };
+    }
+
+    focusMapOn(lat, lng, zoom = 17, bounds = null) {
+        const map = this.ensureMap();
+        if (bounds) {
+            map.fitBounds(bounds, { padding: [40, 40], maxZoom: 18 });
+        } else {
+            map.setView([lat, lng], zoom);
+        }
+        if (this.searchMarker) {
+            map.removeLayer(this.searchMarker);
+            this.searchMarker = null;
+        }
+        this.searchMarker = L.marker([lat, lng]).addTo(map).bindPopup('Searched location');
+    }
+
+    async searchMapLocation() {
+        const input = document.getElementById('mapSearchInput');
+        const query = (input?.value || '').trim();
+        if (!query) {
+            this.showLocationMessage('Type a place name or paste a Google Maps link to move the map.', 'info');
+            return;
+        }
+
+        const coords = this.extractCoordinates(query);
+        if (coords) {
+            this.focusMapOn(coords.lat, coords.lng);
+            this.showLocationMessage(`Map moved to ${coords.lat.toFixed(6)}, ${coords.lng.toFixed(6)}. Click the corners to trace the boundary.`, 'success');
+            return;
+        }
+
+        this.showLocationMessage('Searching for that place…', 'info');
+        try {
+            const result = await this.geocodePlace(query);
+            if (!result) {
+                this.showLocationMessage('No matching place found. Try a more specific name, or paste coordinates from Google Maps.', 'error');
+                return;
+            }
+            this.focusMapOn(result.lat, result.lng, 17, result.bounds);
+            this.showLocationMessage(`Map moved to ${result.label}. Click the corners to trace the boundary.`, 'success');
+        } catch (error) {
+            this.showLocationMessage('Could not search right now. Check your connection, or paste a Google Maps link instead.', 'error');
+        }
+    }
+
+    addPolygonPoint(lat, lng) {
+        const point = { lat: Number(lat), lng: Number(lng) };
+        if (!Number.isFinite(point.lat) || !Number.isFinite(point.lng)) {
+            this.showLocationMessage('That point could not be read. Try again.', 'error');
+            return false;
+        }
+        this.polygonPoints.push(point);
+        this.syncCenter();
+        this.renderPolygon();
+        this.updatePolygonUI();
+        this.clearFieldError('locationPolygon');
         if (this.map) {
-            this.map.setView([defaultLocation.latitude, defaultLocation.longitude], 15);
-            this.updateMapMarker([defaultLocation.latitude, defaultLocation.longitude]);
+            this.map.setView([point.lat, point.lng], Math.max(this.map.getZoom(), 17));
+        }
+        return true;
+    }
+
+    undoPolygonPoint() {
+        if (!this.polygonPoints.length) {
+            this.showLocationMessage('There are no points to undo.', 'info');
+            return;
+        }
+        this.polygonPoints.pop();
+        this.syncCenter();
+        this.renderPolygon();
+        this.updatePolygonUI();
+        this.showLocationMessage('Last point removed.', 'info');
+    }
+
+    clearPolygon() {
+        this.polygonPoints = [];
+        this.currentLocation = null;
+        this.legacyRadius = null;
+        this.syncCenter();
+        this.renderPolygon();
+        this.updatePolygonUI();
+        this.setFormCoordinates('', '');
+        document.getElementById('polygonPointsList') && (document.getElementById('polygonPointsList').innerHTML = '');
+        const display = document.getElementById('coordinatesDisplay');
+        if (display) display.textContent = 'Not captured yet';
+        this.showLocationMessage('Polygon cleared. Start adding points again.', 'info');
+    }
+
+    setPolygonPoints(points) {
+        this.polygonPoints = (Array.isArray(points) ? points : [])
+            .filter((p) => p && p.lat !== undefined && p.lng !== undefined)
+            .map((p) => ({ lat: Number(p.lat), lng: Number(p.lng) }));
+        this.syncCenter();
+        this.renderPolygon();
+        this.updatePolygonUI();
+    }
+
+    syncCenter() {
+        if (!this.polygonPoints.length) {
+            this.setFormCoordinates('', '');
+            return null;
+        }
+        const sum = this.polygonPoints.reduce((acc, p) => ({ lat: acc.lat + p.lat, lng: acc.lng + p.lng }), { lat: 0, lng: 0 });
+        const center = { latitude: sum.lat / this.polygonPoints.length, longitude: sum.lng / this.polygonPoints.length };
+        this.currentLocation = { ...center, accuracy: this.currentLocation?.accuracy ?? null };
+        this.setFormCoordinates(center.latitude, center.longitude);
+        this.updateCoordinatesDisplay();
+        return center;
+    }
+
+    renderPolygon() {
+        if (!this.map) return;
+        if (this.polygonLayer) { this.map.removeLayer(this.polygonLayer); this.polygonLayer = null; }
+        this.polygonMarkers.forEach((m) => this.map.removeLayer(m));
+        this.polygonMarkers = [];
+
+        const latlngs = this.polygonPoints.map((p) => [p.lat, p.lng]);
+        if (latlngs.length >= 3) {
+            this.polygonLayer = L.polygon(latlngs, {
+                color: '#6366f1',
+                fillColor: '#6366f1',
+                fillOpacity: 0.2,
+                weight: 2
+            }).addTo(this.map);
+        } else if (latlngs.length === 2) {
+            this.polygonLayer = L.polyline(latlngs, { color: '#6366f1', weight: 2, dashArray: '6 6' }).addTo(this.map);
+        }
+
+        this.polygonPoints.forEach((p, index) => {
+            const marker = L.circleMarker([p.lat, p.lng], {
+                radius: 8,
+                color: '#ffffff',
+                weight: 2,
+                fillColor: '#6366f1',
+                fillOpacity: 1
+            }).addTo(this.map).bindTooltip(`Point ${index + 1}`, { direction: 'top' });
+            this.polygonMarkers.push(marker);
+        });
+    }
+
+    calculateDistance(lat1, lon1, lat2, lon2) {
+        const R = 6371000;
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(dLat / 2) ** 2 +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    polygonAreaSquareMeters(points) {
+        if (!Array.isArray(points) || points.length < 3) return 0;
+        const rad = Math.PI / 180;
+        const earth = 6371000;
+        let latSum = 0;
+        points.forEach((p) => { latSum += p.lat; });
+        const cos = Math.cos((latSum / points.length) * rad);
+        const xy = points.map((p) => ({ x: p.lng * rad * cos * earth, y: p.lat * rad * earth }));
+        let area = 0;
+        for (let i = 0, j = xy.length - 1; i < xy.length; j = i++) {
+            area += (xy[j].x * xy[i].y) - (xy[i].x * xy[j].y);
+        }
+        return Math.abs(area) / 2;
+    }
+
+    updatePolygonUI() {
+        const count = this.polygonPoints.length;
+        const area = this.polygonAreaSquareMeters(this.polygonPoints);
+        const areaValid = area >= 1;
+        const countEl = document.getElementById('polygonPointCount');
+        const listEl = document.getElementById('polygonPointsList');
+        const summaryEl = document.getElementById('locationPolygonSummary');
+        const submitBtn = document.getElementById('submitLocationBtn');
+
+        if (countEl) {
+            countEl.textContent = count === 0
+                ? 'No points yet — add at least 4 to form the workspace area.'
+                : `${count} point${count === 1 ? '' : 's'} captured${count < 4 ? ` — add ${4 - count} more (minimum 4).` : ''}` +
+                    (count >= 4 && !areaValid ? ' — points overlap, spread them out.' : (count >= 4 ? ' — polygon ready.' : ''));
+        }
+        if (listEl) {
+            listEl.innerHTML = this.polygonPoints.map((p, i) =>
+                `<li${i === count - 1 ? ' class="is-next"' : ''}>Point ${i + 1}: ${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}</li>`
+            ).join('');
+        }
+        if (summaryEl) {
+            if (count < 4) {
+                summaryEl.textContent = `Add at least 4 points to define the workspace boundary (${count}/4 added).`;
+            } else if (!areaValid) {
+                summaryEl.textContent = 'These points overlap and enclose no area. Move to the actual corners of the workspace.';
+            } else {
+                summaryEl.textContent = `Workspace defined by ${count} points (~${Math.round(area).toLocaleString()} m²).`;
+            }
+        }
+        if (submitBtn) {
+            const canSubmit = count >= 4 && areaValid;
+            if (canSubmit) {
+                this.enableLocationSubmit();
+            } else if (this.currentEditingId && this.legacyRadius && count === 0) {
+                this.enableLocationSubmit();
+            } else {
+                submitBtn.disabled = true;
+                submitBtn.textContent = this.currentEditingId ? 'Update location (capture 4+ points)' : 'Add location (capture 4+ points)';
+            }
         }
     }
 
@@ -868,6 +1057,10 @@ class AdminDashboard {
         tbody.innerHTML = locations.map((location) => {
             const isDefault = Number(location.is_default) === 1 || location.is_default === true;
             const isActive = Number(location.is_active) === 1 || location.is_active === true;
+            const points = Array.isArray(location.polygon) ? location.polygon.length : 0;
+            const geofence = points >= 3
+                ? `<span class="badge badge-ok">Polygon · ${points} points</span>`
+                : `Radius · ${this.escapeHtml(location.radius_meters)}m`;
             return `
                 <tr>
                     <td>
@@ -875,7 +1068,7 @@ class AdminDashboard {
                         ${isDefault ? ' <span class="badge badge-muted">Default</span>' : ''}
                     </td>
                     <td>${Number(location.latitude).toFixed(6)}, ${Number(location.longitude).toFixed(6)}</td>
-                    <td>${this.escapeHtml(location.radius_meters)}m</td>
+                    <td>${geofence}</td>
                     <td><span class="badge ${isActive ? 'badge-ok' : 'badge-off'}">${isActive ? 'Active' : 'Inactive'}</span></td>
                     <td>
                         <div class="row-actions">
@@ -901,37 +1094,54 @@ class AdminDashboard {
 
     validateLocationForm() {
         const name = document.getElementById('locationName')?.value.trim();
-        const latitude = parseFloat(document.getElementById('locationLat')?.value);
-        const longitude = parseFloat(document.getElementById('locationLng')?.value);
-        const radius = parseInt(document.getElementById('locationRadius')?.value, 10);
         let valid = true;
 
-        this.clearFormErrors(['locationName', 'locationLat', 'locationLng', 'locationRadius']);
+        this.clearFormErrors(['locationName', 'locationPolygon']);
 
         if (!name) { this.setFieldError('locationName', 'Location name is required.'); valid = false; }
-        if (Number.isNaN(latitude) || Number.isNaN(longitude)) {
-            this.setFieldError('locationLat', 'Detect, pick on the map, or use default office.');
-            this.setFieldError('locationLng', 'Coordinates are required.');
-            valid = false;
-        }
-        if (Number.isNaN(radius) || radius < 50 || radius > 1000) {
-            this.setFieldError('locationRadius', 'Radius must be between 50 and 1000 meters.');
-            valid = false;
+
+        const polygon = this.polygonPoints.map((p) => ({ lat: Number(p.lat.toFixed(8)), lng: Number(p.lng.toFixed(8)) }));
+        const hasEnoughPoints = polygon.length >= 4;
+        const area = this.polygonAreaSquareMeters(polygon);
+        const usePolygon = hasEnoughPoints && area >= 1;
+
+        if (usePolygon) {
+            const center = this.syncCenter();
+            return {
+                name,
+                latitude: center.latitude,
+                longitude: center.longitude,
+                radius_meters: this.legacyRadius || 100,
+                polygon,
+                is_default: document.getElementById('locationDefault')?.checked
+            };
         }
 
-        return valid ? {
-            name,
-            latitude,
-            longitude,
-            radius_meters: radius,
-            is_default: document.getElementById('locationDefault')?.checked
-        } : null;
+        // Legacy fallback: keep editing a radius-only location that has no polygon yet.
+        const latitude = parseFloat(document.getElementById('locationLat')?.value);
+        const longitude = parseFloat(document.getElementById('locationLng')?.value);
+        if (!hasEnoughPoints && this.currentEditingId && this.legacyRadius && !Number.isNaN(latitude) && !Number.isNaN(longitude)) {
+            return {
+                name,
+                latitude,
+                longitude,
+                radius_meters: this.legacyRadius,
+                is_default: document.getElementById('locationDefault')?.checked
+            };
+        }
+
+        if (hasEnoughPoints && area < 1) {
+            this.setFieldError('locationPolygon', 'These points overlap and enclose no area. Spread them across the actual workspace corners.');
+        } else {
+            this.setFieldError('locationPolygon', `Add at least 4 polygon points to define the workspace (${polygon.length}/4 added).`);
+        }
+        return null;
     }
 
     async handleLocationSubmit() {
         const formData = this.validateLocationForm();
         if (!formData) {
-            this.toast('Please complete the location details.', 'warning', 'Incomplete form');
+            this.toast('Capture at least 4 polygon points before saving.', 'warning', 'Incomplete geofence');
             return;
         }
 
@@ -946,13 +1156,7 @@ class AdminDashboard {
                 body: JSON.stringify(formData)
             });
             this.toast(result.message || 'Location saved.', 'success');
-            document.getElementById('locationForm')?.reset();
-            this.currentEditingId = null;
-            if (btn) {
-                btn.disabled = true;
-                btn.textContent = 'Add location (detect or pick first)';
-                delete btn.dataset.originalHtml;
-            }
+            this.resetLocationForm();
             await this.loadLocations();
             await this.loadDashboardStats();
         } catch (error) {
@@ -961,6 +1165,31 @@ class AdminDashboard {
                 this.setButtonLoading(btn, false);
                 btn.disabled = wasDisabled;
             }
+        }
+    }
+
+    resetLocationForm() {
+        document.getElementById('locationForm')?.reset();
+        this.currentEditingId = null;
+        this.legacyRadius = null;
+        this.polygonPoints = [];
+        this.currentLocation = null;
+        if (this.polygonLayer && this.map) { this.map.removeLayer(this.polygonLayer); this.polygonLayer = null; }
+        this.polygonMarkers.forEach((m) => this.map && this.map.removeLayer(m));
+        this.polygonMarkers = [];
+        this.updatePolygonUI();
+        this.setFormCoordinates('', '');
+        const display = document.getElementById('coordinatesDisplay');
+        if (display) display.textContent = 'Not captured yet';
+        const accuracy = document.getElementById('accuracyInfo');
+        if (accuracy) accuracy.textContent = '';
+        const coordsAccuracy = document.getElementById('coordinatesAccuracy');
+        if (coordsAccuracy) coordsAccuracy.textContent = '';
+        const submitBtn = document.getElementById('submitLocationBtn');
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Add location (capture 4+ points)';
+            delete submitBtn.dataset.originalHtml;
         }
     }
 
@@ -973,19 +1202,29 @@ class AdminDashboard {
                 return;
             }
             document.getElementById('locationName').value = location.name;
-            document.getElementById('locationLat').value = location.latitude;
-            document.getElementById('locationLng').value = location.longitude;
-            document.getElementById('locationRadius').value = location.radius_meters;
             document.getElementById('locationDefault').checked = Number(location.is_default) === 1 || location.is_default === true;
             this.currentLocation = {
                 latitude: Number(location.latitude),
                 longitude: Number(location.longitude)
             };
             this.currentEditingId = locationId;
-            this.enableLocationSubmit('Update location');
-            this.updateCoordinatesDisplay();
+            const hasPolygon = Array.isArray(location.polygon) && location.polygon.length >= 3;
+            this.legacyRadius = hasPolygon ? null : (Number(location.radius_meters) || 100);
+            if (hasPolygon) {
+                this.setPolygonPoints(location.polygon);
+            } else {
+                this.polygonPoints = [];
+                this.updatePolygonUI();
+            }
             document.querySelector('[data-tab="locations"]')?.click();
             this.openMapPicker();
+            this.updatePolygonUI();
+            this.updateCoordinatesDisplay();
+            if (hasPolygon) {
+                this.enableLocationSubmit('Update location');
+            } else {
+                this.showLocationMessage('This location still uses the old radius geofence. Add at least 4 points to convert it to a polygon.', 'info');
+            }
             this.toast('Location loaded for editing.', 'info');
         } catch (error) {
             this.toast(error.message, 'error', 'Could not load location');

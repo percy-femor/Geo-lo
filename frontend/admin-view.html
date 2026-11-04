@@ -606,6 +606,7 @@
         .location-message.info { background: rgba(34, 211, 238, 0.12); color: #67e8f9; border: 1px solid rgba(34, 211, 238, 0.28); }
 
         .map-container {
+            position: relative;
             height: 0;
             margin-top: 0;
             border-radius: 16px;
@@ -621,6 +622,41 @@
             border: var(--border);
         }
 
+        .map-search {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            right: 12px;
+            z-index: 1001;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            padding: 8px;
+            border-radius: 12px;
+            background: rgba(15, 23, 42, 0.85);
+            border: 1px solid rgba(148, 163, 184, 0.25);
+            backdrop-filter: blur(6px);
+        }
+
+        .map-search input {
+            flex: 1;
+            min-width: 0;
+            background: transparent;
+            border: none;
+            outline: none;
+            color: inherit;
+            font-size: 0.9rem;
+            padding: 6px 8px;
+        }
+
+        .map-search input::placeholder { color: var(--muted); }
+        .map-search .btn { flex: 0 0 auto; }
+
+        body.light .map-search {
+            background: rgba(255, 255, 255, 0.92);
+            border-color: rgba(15, 23, 42, 0.15);
+        }
+
         .coordinates-display {
             margin-top: 14px;
             padding: 14px;
@@ -632,6 +668,36 @@
         }
 
         .accuracy-info { color: var(--muted); font-size: 0.78rem; margin-top: 4px; }
+
+        .polygon-panel {
+            margin-top: 14px;
+            padding: 14px;
+            border-radius: 12px;
+            background: rgba(99, 102, 241, 0.08);
+            border: 1px solid rgba(99, 102, 241, 0.25);
+        }
+
+        .polygon-hint {
+            margin: 10px 0 0;
+            font-size: 0.82rem;
+            color: var(--muted);
+            line-height: 1.5;
+        }
+
+        .polygon-panel strong { display: block; margin-bottom: 8px; }
+
+        .polygon-list {
+            margin: 10px 0 0;
+            padding-left: 20px;
+            font-family: ui-monospace, Consolas, monospace;
+            font-size: 0.82rem;
+            color: var(--muted);
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .polygon-list li { margin-bottom: 4px; }
+        .polygon-list li.is-next { color: var(--text); }
 
         /* Empty / error / loading */
         .state-box {
@@ -1049,31 +1115,43 @@
                     <div class="card-header">
                         <div>
                             <h3>Add location</h3>
-                            <p>Detect your position, pick from the map, or use the default office</p>
+                            <p>Capture the workspace boundary as a polygon (at least 4 points)</p>
                         </div>
                     </div>
                     <div class="card-body">
                         <div class="location-setup-section">
-                            <h4>Location detection</h4>
+                            <h4>Workspace polygon</h4>
+                            <p class="field-hint" style="margin:0 0 14px">Stand at each corner of the workspace and add a point. Add at least 4 points to close the geofence polygon. Points are ordered as you add them.</p>
                             <div class="auto-detect-section">
                                 <strong>Status</strong>
                                 <div>
-                                    <span id="autoLocationStatus">Ready to detect your location</span>
+                                    <span id="autoLocationStatus">Ready to capture your workspace</span>
                                     <div class="accuracy-info" id="accuracyInfo"></div>
                                 </div>
                             </div>
                             <div class="location-buttons">
-                                <button type="button" class="btn btn-success" id="startAutoLocationBtn">Start detection</button>
-                                <button type="button" class="btn btn-info" id="openMapPickerBtn">Pick from map</button>
-                                <button type="button" class="btn btn-warning" id="useDefaultOfficeBtn">Use default office</button>
-                                <button type="button" class="btn btn-danger" id="stopAutoLocationBtn" style="display:none">Stop detection</button>
+                                <button type="button" class="btn btn-success" id="startAutoLocationBtn">Add point at my location</button>
+                                <button type="button" class="btn btn-info" id="openMapPickerBtn">Pick points on map</button>
+                                <button type="button" class="btn btn-ghost" id="undoPolygonBtn">Undo last point</button>
+                                <button type="button" class="btn btn-danger" id="clearPolygonBtn">Clear polygon</button>
                             </div>
+                            <p class="polygon-hint">“Add point at my location” needs a device with GPS (a phone or tablet). On a laptop or desktop, use “Pick points on map” and click each corner of the workspace.</p>
                             <div id="locationMessage" class="location-message"></div>
-                            <div id="mapContainer" class="map-container"></div>
+                            <div id="mapContainer" class="map-container">
+                                <div class="map-search" id="mapSearch">
+                                    <input type="search" id="mapSearchInput" placeholder="Search a place or paste a Google Maps link…" autocomplete="off">
+                                    <button type="button" class="btn btn-info" id="mapSearchBtn">Locate</button>
+                                </div>
+                            </div>
                             <div class="coordinates-display">
-                                <strong>Coordinates</strong>
-                                <div id="coordinatesDisplay">Not detected yet</div>
+                                <strong>Center (auto)</strong>
+                                <div id="coordinatesDisplay">Not captured yet</div>
                                 <div class="accuracy-info" id="coordinatesAccuracy"></div>
+                            </div>
+                            <div class="polygon-panel">
+                                <strong>Polygon points</strong>
+                                <div id="polygonPointCount">No points yet — add at least 4 to form the workspace area.</div>
+                                <ol id="polygonPointsList" class="polygon-list"></ol>
                             </div>
                         </div>
 
@@ -1085,30 +1163,27 @@
                             </div>
                             <div class="form-grid">
                                 <div class="form-group">
-                                    <label for="locationLat">Latitude *</label>
-                                    <input type="number" step="any" id="locationLat" required readonly>
-                                    <span class="field-hint">Filled from detection or map</span>
-                                    <span class="field-error" data-for="locationLat"></span>
+                                    <label for="locationLat">Center latitude (auto)</label>
+                                    <input type="number" step="any" id="locationLat" readonly>
+                                    <span class="field-hint">Calculated from your polygon points</span>
                                 </div>
                                 <div class="form-group">
-                                    <label for="locationLng">Longitude *</label>
-                                    <input type="number" step="any" id="locationLng" required readonly>
-                                    <span class="field-hint">Filled from detection or map</span>
-                                    <span class="field-error" data-for="locationLng"></span>
+                                    <label for="locationLng">Center longitude (auto)</label>
+                                    <input type="number" step="any" id="locationLng" readonly>
+                                    <span class="field-hint">Calculated from your polygon points</span>
                                 </div>
                             </div>
                             <div class="form-group">
-                                <label for="locationRadius">Geofence radius (meters) *</label>
-                                <input type="number" id="locationRadius" value="100" min="50" max="1000" required>
-                                <span class="field-hint">How far from the center employees can check in (50–1000 m)</span>
-                                <span class="field-error" data-for="locationRadius"></span>
+                                <label for="locationPolygonSummary">Geofence polygon *</label>
+                                <div class="field-hint" id="locationPolygonSummary">Add at least 4 points to define the workspace boundary.</div>
+                                <span class="field-error" data-for="locationPolygon"></span>
                             </div>
                             <div class="form-group check-row">
                                 <input type="checkbox" id="locationDefault">
                                 <label for="locationDefault" style="margin:0">Set as default location</label>
                             </div>
                             <button type="submit" class="btn btn-primary" id="submitLocationBtn" disabled>
-                                Add location (detect or pick first)
+                                Add location (capture at least 4 points)
                             </button>
                         </form>
                     </div>
@@ -1131,8 +1206,8 @@
                                 <thead>
                                     <tr>
                                         <th>Name</th>
-                                        <th>Coordinates</th>
-                                        <th>Radius</th>
+                                        <th>Center</th>
+                                        <th>Geofence</th>
                                         <th>Status</th>
                                         <th>Actions</th>
                                     </tr>
@@ -1336,7 +1411,7 @@
     </div>
 
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-    <script src="admin-dashboard.js?v=20260907render"></script>
+    <script src="admin-dashboard.js?v=20261104polygon5"></script>
 </body>
 
 </html>

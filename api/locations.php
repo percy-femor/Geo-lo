@@ -6,6 +6,13 @@ $database = new Database();
 $db = $database->getConnection();
 $method = $_SERVER['REQUEST_METHOD'];
 
+function locationsWithPolygon(array $rows) {
+    foreach ($rows as &$row) {
+        $row['polygon'] = decodeLocationPolygon($row['polygon'] ?? null);
+    }
+    return $rows;
+}
+
 try {
     switch ($method) {
         case 'GET':
@@ -14,29 +21,45 @@ try {
                 $oid = workerOrganizationId($db, $session['user_id']);
                 $stmt = $db->prepare("SELECT * FROM locations WHERE organization_id <=> ? ORDER BY is_default DESC, name ASC");
                 $stmt->execute([$oid]);
-                sendResponse($stmt->fetchAll(PDO::FETCH_ASSOC));
+                sendResponse(locationsWithPolygon($stmt->fetchAll(PDO::FETCH_ASSOC)));
             }
             $session = requireOrgAdmin($db);
             $stmt = $db->prepare("SELECT * FROM locations WHERE organization_id = ? ORDER BY is_default DESC, name ASC");
             $stmt->execute([orgId($session)]);
-            sendResponse($stmt->fetchAll(PDO::FETCH_ASSOC));
+            sendResponse(locationsWithPolygon($stmt->fetchAll(PDO::FETCH_ASSOC)));
 
         case 'POST':
             $session = requireOrgAdmin($db);
             $oid = orgId($session);
             $data = getJsonInput();
-            foreach (['name', 'latitude', 'longitude'] as $field) {
-                if (!isset($data[$field])) sendResponse(["error" => "Missing required field: $field"], 400);
+            if (empty($data['name'])) sendResponse(["error" => "Missing required field: name"], 400);
+
+            $polygon = array_key_exists('polygon', $data) ? normalizeLocationPolygon($data['polygon']) : null;
+            if ($polygon === false) {
+                sendResponse(["error" => "A workspace geofence needs at least 4 distinct points that outline a real area."], 400);
             }
+
+            $latitude = $data['latitude'] ?? null;
+            $longitude = $data['longitude'] ?? null;
+            if ($polygon) {
+                $center = polygonCentroid($polygon);
+                if ($latitude === null || $latitude === '') $latitude = $center['lat'];
+                if ($longitude === null || $longitude === '') $longitude = $center['lng'];
+            }
+            if ($latitude === null || $longitude === null || $latitude === '' || $longitude === '' || !is_numeric($latitude) || !is_numeric($longitude)) {
+                sendResponse(["error" => "Missing required field: latitude"], 400);
+            }
+
             if (!empty($data['is_default'])) {
                 $db->prepare("UPDATE locations SET is_default = 0 WHERE organization_id = ?")->execute([$oid]);
             }
-            $stmt = $db->prepare("INSERT INTO locations (name, latitude, longitude, radius_meters, is_default, organization_id) VALUES (?, ?, ?, ?, ?, ?)");
+            $stmt = $db->prepare("INSERT INTO locations (name, latitude, longitude, radius_meters, polygon, is_default, organization_id) VALUES (?, ?, ?, ?, ?, ?, ?)");
             $stmt->execute([
                 $data['name'],
-                $data['latitude'],
-                $data['longitude'],
+                $latitude,
+                $longitude,
                 $data['radius_meters'] ?? 100,
+                $polygon ? json_encode($polygon) : null,
                 $data['is_default'] ?? false,
                 $oid
             ]);
@@ -56,6 +79,19 @@ try {
             $values = [];
             foreach (['name', 'latitude', 'longitude', 'radius_meters', 'is_default'] as $field) {
                 if (isset($data[$field])) { $fields[] = "$field = ?"; $values[] = $data[$field]; }
+            }
+            if (array_key_exists('polygon', $data)) {
+                $polygon = normalizeLocationPolygon($data['polygon']);
+                if ($polygon === false) {
+                    sendResponse(["error" => "A workspace geofence needs at least 4 distinct points that outline a real area."], 400);
+                }
+                $fields[] = "polygon = ?";
+                $values[] = $polygon ? json_encode($polygon) : null;
+                if ($polygon && (!isset($data['latitude']) || !isset($data['longitude']))) {
+                    $center = polygonCentroid($polygon);
+                    if (!isset($data['latitude'])) { $fields[] = "latitude = ?"; $values[] = $center['lat']; }
+                    if (!isset($data['longitude'])) { $fields[] = "longitude = ?"; $values[] = $center['lng']; }
+                }
             }
             if (empty($fields)) sendResponse(["message" => "No fields to update"]);
             $values[] = $data['id'];

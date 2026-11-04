@@ -51,11 +51,29 @@ try {
         $stmt->execute([$workerId]);
         $locations = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        $accuracyBonus = $accuracy !== null ? min((float)$accuracy, 800) : 0;
+        // Small grace zone so minor GPS jitter at the boundary does not block a valid punch.
+        $accuracyGrace = $accuracy !== null ? min((float)$accuracy, 10) : 0;
         $withinGeofence = false;
         $validLocation = null;
         $nearestDistance = null;
         foreach ($locations as $location) {
+            $polygon = decodeLocationPolygon($location['polygon'] ?? null);
+            if ($polygon && polygonAreaSquareMeters($polygon) >= 1.0) {
+                $inside = geoPointInPolygon($data['latitude'], $data['longitude'], $polygon);
+                $edgeDistance = geoDistanceToPolygon($data['latitude'], $data['longitude'], $polygon);
+                if ($edgeDistance !== null && ($nearestDistance === null || $edgeDistance < $nearestDistance)) {
+                    $nearestDistance = $edgeDistance;
+                }
+                if (!$inside && $edgeDistance !== null && $edgeDistance <= $accuracyGrace) {
+                    $inside = true;
+                }
+                if ($inside) {
+                    $withinGeofence = true;
+                    $validLocation = $location;
+                    break;
+                }
+                continue;
+            }
             $distance = calculateDistance(
                 $data['latitude'],
                 $data['longitude'],
@@ -65,7 +83,7 @@ try {
             if ($nearestDistance === null || $distance < $nearestDistance) {
                 $nearestDistance = $distance;
             }
-            $radius = (float)$location['radius_meters'] + $accuracyBonus;
+            $radius = (float)$location['radius_meters'] + $accuracyGrace;
             if ($distance <= $radius) {
                 $withinGeofence = true;
                 $validLocation = $location;

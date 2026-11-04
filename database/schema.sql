@@ -39,6 +39,7 @@ CREATE TABLE locations (
     latitude DECIMAL(10, 8) NOT NULL,
     longitude DECIMAL(11, 8) NOT NULL,
     radius_meters INT DEFAULT 100,
+    polygon TEXT NULL,
     is_active BOOLEAN DEFAULT TRUE,
     is_default BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
