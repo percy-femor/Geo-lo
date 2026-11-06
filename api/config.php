@@ -19,6 +19,8 @@ function loadDotEnv($path) {
 }
 loadDotEnv(dirname(__DIR__) . DIRECTORY_SEPARATOR . '.env');
 
+const GEOLO_SCHEMA_VERSION = 2026110601;
+
 function envFlagEnabled($name) {
     $value = strtolower(trim((string)(getenv($name) ?: '')));
     return in_array($value, ['1', 'true', 'yes', 'on'], true);
@@ -317,6 +319,18 @@ function ensureGeoLoSchema($db) {
     if ($done || !$db) return;
     $done = true;
 
+    try {
+        $db->exec("CREATE TABLE IF NOT EXISTS schema_meta (meta_key VARCHAR(64) PRIMARY KEY, meta_value VARCHAR(255) NULL)");
+        $stmt = $db->prepare("SELECT meta_value FROM schema_meta WHERE meta_key = 'schema_version'");
+        $stmt->execute();
+        $current = $stmt->fetchColumn();
+        if ($current !== false && (int)$current === GEOLO_SCHEMA_VERSION) {
+            return;
+        }
+    } catch (Exception $e) {
+        // Fall through to full migration if the version check itself fails.
+    }
+
     $db->exec("CREATE TABLE IF NOT EXISTS organizations (
         id INT AUTO_INCREMENT PRIMARY KEY,
         name VARCHAR(150) NOT NULL,
@@ -548,5 +562,10 @@ function ensureGeoLoSchema($db) {
             }
         }
     }
+
+    try {
+        $db->prepare("INSERT INTO schema_meta (meta_key, meta_value) VALUES ('schema_version', ?)
+            ON DUPLICATE KEY UPDATE meta_value = VALUES(meta_value)")->execute([GEOLO_SCHEMA_VERSION]);
+    } catch (Exception $e) {}
 }
 // Intentionally no closing PHP tag
