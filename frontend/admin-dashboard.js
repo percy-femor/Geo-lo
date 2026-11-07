@@ -421,37 +421,71 @@ class AdminDashboard {
             this.toast('Location needs an https:// connection.', 'error', 'Location');
             return;
         }
-        const options = { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 };
-        this.showLocationMessage('Capturing your position…', 'info');
-        this.updateAutoLocationStatus('Capturing your position…', 'active');
-        navigator.geolocation.getCurrentPosition(
-            (position) => {
+        const last = this.polygonPoints[this.polygonPoints.length - 1];
+        this.showLocationMessage('Getting a precise GPS fix… stay still for a moment.', 'info');
+        this.updateAutoLocationStatus('Getting a precise fix…', 'active');
+        this.capturePrecisePosition(last, (accuracy) => {
+            this.updateAutoLocationStatus(`Getting a precise fix… ±${Math.round(accuracy)} m`, 'active');
+        }).then((fix) => {
+            this.currentLocation = { latitude: fix.lat, longitude: fix.lng, accuracy: fix.accuracy };
+            this.updateAccuracyDisplay();
+            if (last && this.calculateDistance(last.lat, last.lng, fix.lat, fix.lng) < 1) {
+                this.updateAutoLocationStatus('Location not changing', 'inactive');
+                this.showLocationMessage(this.sameLocationMessage(), 'error');
+                return;
+            }
+            if (this.addPolygonPoint(fix.lat, fix.lng)) {
+                this.updateAutoLocationStatus('Point added', 'active');
+                this.showLocationMessage(`Point ${this.polygonPoints.length} added from your current position.`, 'success');
+            }
+        }).catch((error) => this.handleLocationError(error));
+    }
+
+    // iOS Safari returns a cached, unchanging position from repeated getCurrentPosition()
+    // calls; watchPosition() streams fresh fixes. So we watch and resolve with the first
+    // accurate fix that actually moved from the previous point (or the best fix on timeout).
+    capturePrecisePosition(previous, onProgress) {
+        return new Promise((resolve, reject) => {
+            const options = { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 };
+            const settleAfter = previous ? 9000 : 4000;
+            let watchId = null;
+            let settleTimer = null;
+            let hardTimer = null;
+            let best = null;
+            let settled = false;
+            const cleanup = () => {
+                if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+                clearTimeout(settleTimer);
+                clearTimeout(hardTimer);
+            };
+            const finish = (result, isError) => {
+                if (settled) return;
+                settled = true;
+                cleanup();
+                if (isError) reject(result); else resolve(result);
+            };
+            const giveBest = () => (best ? finish(best) : finish({ code: 3 }, true));
+            settleTimer = setTimeout(giveBest, settleAfter);
+            hardTimer = setTimeout(giveBest, 20000);
+            watchId = navigator.geolocation.watchPosition((position) => {
                 const lat = position.coords.latitude;
                 const lng = position.coords.longitude;
-                this.currentLocation = {
-                    latitude: lat,
-                    longitude: lng,
-                    accuracy: position.coords.accuracy
-                };
-                this.updateAccuracyDisplay();
-                this.updateAutoLocationStatus('Point added', 'active');
+                const accuracy = position.coords.accuracy || 9999;
+                if (onProgress) onProgress(accuracy);
+                const fix = { lat, lng, accuracy };
+                if (!best || accuracy < best.accuracy) best = fix;
+                const moved = !previous || this.calculateDistance(previous.lat, previous.lng, lat, lng) >= 2;
+                if (moved && accuracy <= 65) finish(fix);
+            }, (error) => finish(error, true), options);
+        });
+    }
 
-                const last = this.polygonPoints[this.polygonPoints.length - 1];
-                if (last && this.calculateDistance(last.lat, last.lng, lat, lng) < 1) {
-                    this.showLocationMessage(
-                        'Your device reported the same location as the previous point. Laptops and desktops have no GPS, so the browser returns one fixed approximate location. Use “Pick points on map” to click each corner of the workspace.',
-                        'error'
-                    );
-                    this.updateAutoLocationStatus('Location not changing', 'inactive');
-                    return;
-                }
-                if (this.addPolygonPoint(lat, lng)) {
-                    this.showLocationMessage(`Point ${this.polygonPoints.length} added from your current position.`, 'success');
-                }
-            },
-            (error) => this.handleLocationError(error),
-            options
-        );
+    sameLocationMessage() {
+        if (this.isIOS()) {
+            return 'Your iPhone is reporting the same position for every point. This usually means Precise Location is switched off for Safari. Turn it on: Settings → Privacy & Security → Location Services → Safari Websites → enable Precise Location (or in Safari tap the “aA” button → Website Settings → Precise Location → On). Then walk to the next corner and try again — or use “Pick points on map”.';
+        }
+        return 'Your device reported the same location as the previous point. Devices without GPS return one fixed approximate location. Use “Pick points on map” to click each corner of the workspace.';
     }
 
     async handleLocationError(error) {
