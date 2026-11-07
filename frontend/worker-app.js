@@ -38,17 +38,18 @@ class WorkerApp {
         setInterval(() => this.loadTodayAttendance(), 30000);
     }
 
-    async logout() {
-        try {
-            await fetch(`${this.baseUrl}/auth.php`, {
-                method: 'POST',
-                headers: this.headers(),
-                credentials: 'include',
-                body: JSON.stringify({ action: 'logout' })
-            });
-        } catch (e) {}
+    logout() {
+        // Clear local state and leave immediately; the server session is revoked in the background.
+        const options = {
+            method: 'POST',
+            headers: this.headers(),
+            credentials: 'include',
+            keepalive: true,
+            body: JSON.stringify({ action: 'logout' })
+        };
+        try { fetch(`${this.baseUrl}/auth.php`, options).catch(() => {}); } catch (e) {}
         GeoSession.clear();
-        window.location.href = 'login.html';
+        window.location.replace('login.html');
     }
 
     async loadLocations() {
@@ -89,12 +90,19 @@ class WorkerApp {
             if (this.locationInitTimeout) { clearTimeout(this.locationInitTimeout); this.locationInitTimeout = null; }
         };
         const onErr = (error) => {
-            const map = {
-                1: 'Location access denied. Please enable location services.',
-                2: 'Location information unavailable.',
-                3: 'Location request timed out.'
-            };
-            const message = map[error.code] || 'Unknown location error.';
+            const code = error && error.code;
+            let message;
+            if (!window.isSecureContext) {
+                message = 'Location needs an https:// connection. Open the site securely, then allow location.';
+            } else if (code === 1) {
+                message = 'Location is blocked for this site. Tap the padlock / ⓘ icon in the address bar → Permissions → Location → Allow, then reload.';
+            } else if (code === 2) {
+                message = 'Location unavailable. Turn on GPS / Location services and move near a window, then reload.';
+            } else if (code === 3) {
+                message = 'Location timed out. Move where the GPS signal is clearer and reload.';
+            } else {
+                message = 'Unknown location error.';
+            }
             this.updateLocationStatus(false, message);
         };
         navigator.geolocation.getCurrentPosition(onOk, onErr, options);

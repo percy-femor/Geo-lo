@@ -9,38 +9,38 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
     <style>
         :root {
-            --bg: #0b1020;
-            --surface: #111827;
-            --muted: #94a3b8;
-            --text: #e5e7eb;
-            --primary: #6366f1;
-            --primary-press: #4f46e5;
+            --bg: #071a13;
+            --surface: #0f231a;
+            --muted: #93b3a5;
+            --text: #e6f2ec;
+            --primary: #10b981;
+            --primary-press: #059669;
             --success: #10b981;
             --danger: #ef4444;
             --warning: #f59e0b;
-            --info: #22d3ee;
-            --card: rgba(17, 24, 39, 0.78);
-            --border: 1px solid rgba(148, 163, 184, 0.16);
-            --shadow: 0 20px 40px rgba(2, 6, 23, 0.45);
+            --info: #2dd4bf;
+            --card: rgba(15, 35, 26, 0.78);
+            --border: 1px solid rgba(147, 179, 165, 0.18);
+            --shadow: 0 20px 40px rgba(2, 20, 12, 0.5);
             --radius: 18px;
             --sidebar-w: 260px;
             --ease: cubic-bezier(0.22, 1, 0.36, 1);
         }
 
         body.light {
-            --bg: #f6f7fb;
+            --bg: #eafaf1;
             --surface: #ffffff;
-            --muted: #64748b;
-            --text: #0f172a;
-            --primary: #4f46e5;
-            --primary-press: #4338ca;
+            --muted: #5c7d6e;
+            --text: #10251b;
+            --primary: #16a34a;
+            --primary-press: #15803d;
             --success: #16a34a;
             --danger: #dc2626;
             --warning: #d97706;
-            --info: #0891b2;
-            --card: rgba(255, 255, 255, 0.86);
-            --border: 1px solid rgba(100, 116, 139, 0.16);
-            --shadow: 0 16px 36px rgba(15, 23, 42, 0.08);
+            --info: #0d9488;
+            --card: rgba(255, 255, 255, 0.88);
+            --border: 1px solid rgba(22, 163, 74, 0.16);
+            --shadow: 0 16px 36px rgba(16, 80, 50, 0.10);
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -57,9 +57,9 @@
         body {
             font-family: 'Poppins', sans-serif;
             background:
-                radial-gradient(1100px 560px at 8% -10%, #1e1b4b 0%, transparent 50%),
-                radial-gradient(900px 480px at 100% 0%, #0e7490 0%, transparent 42%),
-                radial-gradient(800px 500px at 80% 110%, #312e81 0%, transparent 46%),
+                radial-gradient(1100px 560px at 8% -10%, #0b3b2a 0%, transparent 50%),
+                radial-gradient(900px 480px at 100% 0%, #064e3b 0%, transparent 42%),
+                radial-gradient(800px 500px at 80% 110%, #052e22 0%, transparent 46%),
                 var(--bg);
             color: var(--text);
             min-height: 100vh;
@@ -68,8 +68,8 @@
 
         body.light {
             background:
-                radial-gradient(1100px 560px at 8% -10%, #c7d2fe 0%, transparent 50%),
-                radial-gradient(900px 480px at 100% 0%, #a5f3fc 0%, transparent 42%),
+                radial-gradient(1100px 560px at 8% -10%, #bbf7d0 0%, transparent 50%),
+                radial-gradient(900px 480px at 100% 0%, #a7f3d0 0%, transparent 42%),
                 var(--bg);
         }
 
@@ -107,10 +107,10 @@
             border-radius: 14px;
             display: grid;
             place-items: center;
-            background: linear-gradient(135deg, var(--primary), #22d3ee);
+            background: linear-gradient(135deg, var(--primary), #34d399);
             color: #fff;
             font-weight: 700;
-            box-shadow: 0 8px 20px rgba(99, 102, 241, 0.35);
+            box-shadow: 0 8px 20px rgba(16, 163, 74, 0.35);
             animation: floatMark 4s ease-in-out infinite;
         }
 
@@ -155,15 +155,15 @@
         .menu-item svg { width: 18px; height: 18px; flex-shrink: 0; }
 
         .menu-item:hover {
-            background: rgba(99, 102, 241, 0.12);
+            background: rgba(16, 163, 74, 0.12);
             color: var(--text);
             transform: translateX(3px);
         }
 
         .menu-item.active {
-            background: linear-gradient(90deg, rgba(99, 102, 241, 0.22), rgba(99, 102, 241, 0.06));
+            background: linear-gradient(90deg, rgba(16, 163, 74, 0.22), rgba(16, 163, 74, 0.06));
             color: var(--text);
-            box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.28);
+            box-shadow: inset 0 0 0 1px rgba(16, 163, 74, 0.28);
         }
 
         .menu-item.active::before {
@@ -261,7 +261,7 @@
             gap: 8px;
             padding: 8px 12px;
             border-radius: 999px;
-            background: rgba(99, 102, 241, 0.12);
+            background: rgba(16, 163, 74, 0.12);
             border: var(--border);
             color: var(--text);
             font-size: 0.8rem;
@@ -269,7 +269,7 @@
         }
 
         .toggle { cursor: pointer; transition: transform 0.2s var(--ease), background 0.2s; }
-        .toggle:hover { transform: translateY(-1px); background: rgba(99, 102, 241, 0.2); }
+        .toggle:hover { transform: translateY(-1px); background: rgba(16, 163, 74, 0.2); }
 
         .status-indicator {
             width: 10px;
@@ -374,7 +374,7 @@
         }
 
         .stat-icon svg { width: 22px; height: 22px; }
-        .stat-icon.indigo { background: linear-gradient(135deg, #6366f1, #4f46e5); }
+        .stat-icon.indigo { background: linear-gradient(135deg, #10b981, #059669); }
         .stat-icon.emerald { background: linear-gradient(135deg, #10b981, #059669); }
         .stat-icon.cyan { background: linear-gradient(135deg, #06b6d4, #0891b2); }
         .stat-icon.amber { background: linear-gradient(135deg, #f59e0b, #d97706); }
@@ -428,7 +428,7 @@
         input:focus, select:focus, textarea:focus {
             outline: none;
             border-color: var(--primary);
-            box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.16);
+            box-shadow: 0 0 0 4px rgba(16, 163, 74, 0.16);
         }
 
         input.is-invalid, select.is-invalid {
@@ -488,7 +488,7 @@
         .btn:active:not(:disabled) { transform: translateY(0) scale(0.98); }
         .btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
 
-        .btn-primary { background: var(--primary); box-shadow: 0 8px 18px rgba(99, 102, 241, 0.28); }
+        .btn-primary { background: var(--primary); box-shadow: 0 8px 18px rgba(16, 163, 74, 0.28); }
         .btn-danger { background: var(--danger); box-shadow: 0 8px 18px rgba(239, 68, 68, 0.25); }
         .btn-success { background: var(--success); box-shadow: 0 8px 18px rgba(16, 185, 129, 0.25); }
         .btn-warning { background: var(--warning); color: #1f2937; box-shadow: 0 8px 18px rgba(245, 158, 11, 0.25); }
@@ -535,7 +535,7 @@
         }
 
         tbody tr { transition: background 0.2s; }
-        tbody tr:hover { background: rgba(99, 102, 241, 0.07); }
+        tbody tr:hover { background: rgba(16, 163, 74, 0.07); }
 
         .badge {
             display: inline-flex;
@@ -673,8 +673,8 @@
             margin-top: 14px;
             padding: 14px;
             border-radius: 12px;
-            background: rgba(99, 102, 241, 0.08);
-            border: 1px solid rgba(99, 102, 241, 0.25);
+            background: rgba(16, 163, 74, 0.08);
+            border: 1px solid rgba(16, 163, 74, 0.25);
         }
 
         .polygon-hint {
@@ -834,7 +834,7 @@
             margin-top: 18px;
             padding: 16px;
             border-radius: 14px;
-            background: rgba(99, 102, 241, 0.08);
+            background: rgba(16, 163, 74, 0.08);
             border: var(--border);
         }
 
@@ -858,8 +858,8 @@
     </style>
 </head>
 
-<body class="admin-pending">
-    <script src="session.js?v=20260907render"></script>
+<body class="admin-pending light">
+    <script src="session.js?v=20261106speed1"></script>
     <script>
         if (localStorage.getItem('geo_role') === 'worker') {
             location.replace('admin-login.html?denied=1');
@@ -1411,7 +1411,7 @@
     </div>
 
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-    <script src="admin-dashboard.js?v=20261104polygon5"></script>
+    <script src="admin-dashboard.js?v=20261106speed1"></script>
 </body>
 
 </html>

@@ -47,6 +47,19 @@ const GeoSession = {
         return fetch(this.apiUrl(url), Object.assign({}, options, { headers, credentials: 'include' }));
     },
     async assertAdmin() {
+        // The PHP page already validated this session, so trust its boot payload to avoid a second round-trip.
+        const boot = window.__GEO_BOOT;
+        if (boot && boot.role === 'admin' && boot.user && this.getToken()) {
+            this.set(this.getToken(), 'admin', Object.assign({}, boot.user, {
+                privilege: boot.user.privilege || boot.privilege || 'admin'
+            }));
+            if (boot.user.privilege === 'super_admin') return true;
+            if (!boot.user.organization_id) {
+                this.clear();
+                return false;
+            }
+            return true;
+        }
         if (this.getRole() === 'worker') {
             this.clear();
             return false;
@@ -87,6 +100,12 @@ const GeoSession = {
         return !!(user && user.privilege === 'super_admin');
     },
     async assertWorker() {
+        // The PHP page already validated this session, so trust its boot payload to avoid a second round-trip.
+        const boot = window.__GEO_BOOT;
+        if (boot && boot.role === 'worker' && boot.user && this.getToken()) {
+            this.set(this.getToken(), 'worker', boot.user);
+            return true;
+        }
         if (this.getRole() === 'admin') {
             return false;
         }

@@ -84,7 +84,7 @@ class AdminDashboard {
     /* ---------- UI chrome ---------- */
 
     applyStoredTheme() {
-        const theme = localStorage.getItem('geo_theme') || 'dark';
+        const theme = localStorage.getItem('geo_theme') || 'light';
         document.body.classList.toggle('light', theme === 'light');
     }
 
@@ -416,6 +416,11 @@ class AdminDashboard {
             this.toast('Geolocation is not supported by this browser.', 'error');
             return;
         }
+        if (!window.isSecureContext) {
+            this.showLocationMessage('Your browser only shares your location on a secure (https://) page. Open this site using its https address, then try again — or use “Pick points on map”.', 'error');
+            this.toast('Location needs an https:// connection.', 'error', 'Location');
+            return;
+        }
         const options = { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 };
         this.showLocationMessage('Capturing your position…', 'info');
         this.updateAutoLocationStatus('Capturing your position…', 'active');
@@ -449,16 +454,54 @@ class AdminDashboard {
         );
     }
 
-    handleLocationError(error) {
-        const messages = {
-            1: 'Location access denied. Allow location in your browser settings and try again.',
-            2: 'Location unavailable. Check GPS or Wi-Fi and try again.',
-            3: 'Location request timed out. Try again or pick points on the map.'
-        };
-        const message = messages[error.code] || 'Unable to get your location.';
-        this.showLocationMessage(message, 'error');
-        this.toast(message, 'error', 'Location failed');
+    async handleLocationError(error) {
         this.updateAutoLocationStatus('Location capture failed', 'inactive');
+        const help = await this.describeLocationProblem(error);
+        this.showLocationMessage('', 'error', {
+            html: `<strong>${this.escapeHtml(help.title)}</strong><br>${this.escapeHtml(help.detail)}<br>` +
+                '<button type="button" class="btn btn-primary btn-sm" data-location-retry style="margin-top:10px">Try again</button>',
+            retry: true
+        });
+        this.toast(help.title, 'error', 'Location failed');
+    }
+
+    async describeLocationProblem(error) {
+        const code = error && typeof error.code === 'number' ? error.code : 0;
+        if (!window.isSecureContext) {
+            return {
+                title: 'Location needs a secure (https://) page',
+                detail: 'Browsers only share your position over https://. Open this site using its https address, then tap Try again — or use “Pick points on map”.'
+            };
+        }
+        let permission = '';
+        try {
+            if (navigator.permissions && navigator.permissions.query) {
+                const status = await navigator.permissions.query({ name: 'geolocation' });
+                permission = status.state;
+            }
+        } catch (e) { /* permissions API not supported */ }
+        if (code === 1 || permission === 'denied') {
+            return {
+                title: 'Location is blocked for this site',
+                detail: 'Your browser has location switched off for this site, so it will not ask again. To turn it back on, tap the padlock / ⓘ icon in the address bar → Permissions (or Site settings) → Location → Allow, then tap Try again. iPhone (Safari): Settings → Safari → Location → Allow. Android (Chrome): tap the lock icon → Permissions → Location → Allow.'
+            };
+        }
+        if (code === 2) {
+            return {
+                title: 'Location unavailable',
+                detail: 'Turn on GPS / Location services on your phone and move near a window or outside, then tap Try again.'
+            };
+        }
+        if (code === 3) {
+            return {
+                title: 'Location timed out',
+                detail: 'GPS took too long to respond. Move somewhere with a clearer signal and tap Try again — or use “Pick points on map”.'
+            };
+        }
+        return {
+            title: 'Unable to get your location',
+            detail: 'Tap Try again, or use “Pick points on map” to trace the boundary.'
+        };
     }
 
     updateAutoLocationStatus(message, status) {
@@ -797,12 +840,19 @@ class AdminDashboard {
         }
     }
 
-    showLocationMessage(message, type) {
+    showLocationMessage(message, type, options = {}) {
         const el = document.getElementById('locationMessage');
         if (!el) return;
-        el.textContent = message;
+        if (options.html) {
+            el.innerHTML = options.html;
+        } else {
+            el.textContent = message;
+        }
         el.className = `location-message show ${type}`;
-        if (type === 'success') {
+        if (options.retry) {
+            el.querySelector('[data-location-retry]')?.addEventListener('click', () => this.addPointAtMyLocation());
+        }
+        if (type === 'success' && !options.html) {
             setTimeout(() => {
                 if (el.textContent === message) el.classList.remove('show');
             }, 5000);
@@ -1646,10 +1696,16 @@ class AdminDashboard {
         }
     }
 
-    async logout() {
-        try {
-            await fetch(`${this.baseUrl}/auth.php`, { method: 'POST', headers: GeoSession.headers(), credentials: 'include', body: JSON.stringify({ action: 'logout' }) });
-        } catch (e) {}
+    logout() {
+        // Clear local state and leave immediately; the server session is revoked in the background.
+        const options = {
+            method: 'POST',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, GeoSession.headers()),
+            credentials: 'include',
+            keepalive: true,
+            body: JSON.stringify({ action: 'logout' })
+        };
+        try { fetch(`${this.baseUrl}/auth.php`, options).catch(() => {}); } catch (e) {}
         GeoSession.clear();
         window.location.replace('admin-login.html');
     }

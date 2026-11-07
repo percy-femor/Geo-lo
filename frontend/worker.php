@@ -1,6 +1,7 @@
 <?php
 require_once dirname(__DIR__) . '/api/config.php';
 require_once dirname(__DIR__) . '/api/auth_lib.php';
+require_once dirname(__DIR__) . '/api/face_lib.php';
 
 $database = new Database();
 $db = $database->getConnection();
@@ -20,14 +21,19 @@ if (!$session || $session['role'] !== 'worker') {
     exit;
 }
 
-$stmt = $db->prepare("SELECT id FROM workers WHERE id = ? AND COALESCE(is_active, 1) = 1 LIMIT 1");
+$stmt = $db->prepare("SELECT w.id, w.employee_id, w.name, w.email, w.phone, w.shift_id, w.require_face, w.device_bound,
+        s.name AS shift_name, s.start_time, s.end_time
+    FROM workers w LEFT JOIN shifts s ON s.id = w.shift_id
+    WHERE w.id = ? AND COALESCE(w.is_active, 1) = 1 LIMIT 1");
 $stmt->execute([$session['user_id']]);
-if (!$stmt->fetch()) {
+$worker = $stmt->fetch(PDO::FETCH_ASSOC);
+if (!$worker) {
     header('Location: login.html?denied=1', true, 302);
     exit;
 }
+$worker['has_face'] = getEnrolledFaceHash($db, $worker['id']) ? true : false;
 
 header('Content-Type: text/html; charset=UTF-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Pragma: no-cache');
-readfile(__DIR__ . '/worker-view.html');
+serveHtmlWithBoot(__DIR__ . '/worker-view.html', ['role' => 'worker', 'user' => $worker]);

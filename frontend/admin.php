@@ -20,7 +20,8 @@ if (!$session || $session['role'] !== 'admin') {
     exit;
 }
 
-$stmt = $db->prepare("SELECT a.id, a.privilege, a.organization_id, o.is_active AS organization_active
+$stmt = $db->prepare("SELECT a.id, a.name, a.email, a.privilege, a.is_active, a.organization_id,
+        o.name AS organization_name, o.is_active AS organization_active
     FROM admins a LEFT JOIN organizations o ON o.id = a.organization_id
     WHERE a.id = ? AND COALESCE(a.is_active, 1) = 1 LIMIT 1");
 $stmt->execute([$session['user_id']]);
@@ -41,7 +42,13 @@ if (empty($admin['organization_id']) || (int)$admin['organization_active'] !== 1
     exit;
 }
 
+$user = publicAdminUser($admin);
+
 header('Content-Type: text/html; charset=UTF-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Pragma: no-cache');
-readfile(__DIR__ . '/admin-view.html');
+serveHtmlWithBoot(__DIR__ . '/admin-view.html', [
+    'role' => 'admin',
+    'privilege' => $user['privilege'],
+    'user' => $user
+]);

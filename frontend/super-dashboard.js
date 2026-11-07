@@ -45,7 +45,7 @@ class SuperDashboard {
     }
 
     applyStoredTheme() {
-        const theme = localStorage.getItem('geo_theme') || 'dark';
+        const theme = localStorage.getItem('geo_theme') || 'light';
         document.body.classList.toggle('light', theme === 'light');
     }
 
@@ -365,6 +365,7 @@ class SuperDashboard {
                             ${active
                                 ? `<button class="btn btn-danger btn-sm" type="button" data-suspend-org="${o.id}">Suspend</button>`
                                 : `<button class="btn btn-success btn-sm" type="button" data-activate-org="${o.id}">Activate</button>`}
+                            <button class="btn btn-outline-danger btn-sm" type="button" data-delete-org="${o.id}">Delete</button>
                         </div>
                     </td>
                 </tr>
@@ -375,6 +376,9 @@ class SuperDashboard {
         });
         tbody.querySelectorAll('[data-activate-org]').forEach((btn) => {
             btn.addEventListener('click', () => this.setOrgActive(Number(btn.dataset.activateOrg), true));
+        });
+        tbody.querySelectorAll('[data-delete-org]').forEach((btn) => {
+            btn.addEventListener('click', () => this.deleteOrganization(Number(btn.dataset.deleteOrg)));
         });
     }
 
@@ -431,6 +435,37 @@ class SuperDashboard {
             await this.loadOverview();
         } catch (error) {
             this.toast(error.message, 'error');
+        }
+    }
+
+    async deleteOrganization(id) {
+        const org = (this.organizations || []).find((o) => Number(o.id) === Number(id));
+        const name = org ? org.name : 'this organization';
+        const admins = Number(org?.admin_count || 0);
+        const workers = Number(org?.worker_count || 0);
+        const locations = Number(org?.location_count || 0);
+        const ok = await this.confirmDialog({
+            title: `Delete ${name}?`,
+            message: `This permanently removes the organization and everything linked to it — ${admins} admin(s), ${workers} worker(s), ${locations} location(s), plus their shifts, attendance, face data, sessions and history. This cannot be undone.`,
+            confirmText: 'Delete permanently',
+            danger: true
+        });
+        if (!ok) return;
+        try {
+            const result = await this.request('super.php', {
+                method: 'DELETE',
+                body: JSON.stringify({ action: 'delete_organization', id })
+            });
+            const removed = result.deleted || {};
+            this.toast(
+                `${name} deleted. Removed ${Number(removed.workers || 0)} worker(s), ${Number(removed.admins || 0)} admin(s), ${Number(removed.locations || 0)} location(s).`,
+                'success',
+                'Organization deleted'
+            );
+            await this.loadOrganizations();
+            await this.loadOverview();
+        } catch (error) {
+            this.toast(error.message, 'error', 'Delete failed');
         }
     }
 
@@ -782,15 +817,16 @@ class SuperDashboard {
         }
     }
 
-    async logout() {
-        try {
-            await fetch(`${this.baseUrl}/auth.php`, {
-                method: 'POST',
-                headers: GeoSession.headers(),
-                credentials: 'include',
-                body: JSON.stringify({ action: 'logout' })
-            });
-        } catch (e) {}
+    logout() {
+        // Clear local state and leave immediately; the server session is revoked in the background.
+        const options = {
+            method: 'POST',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, GeoSession.headers()),
+            credentials: 'include',
+            keepalive: true,
+            body: JSON.stringify({ action: 'logout' })
+        };
+        try { fetch(`${this.baseUrl}/auth.php`, options).catch(() => {}); } catch (e) {}
         GeoSession.clear();
         window.location.replace('super-login.html');
     }

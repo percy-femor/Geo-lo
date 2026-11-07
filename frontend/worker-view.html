@@ -9,31 +9,31 @@
         rel="stylesheet">
     <style>
         :root {
-            --bg: #0f172a;
-            --surface: #111827;
-            --muted: #94a3b8;
-            --text: #e5e7eb;
-            --primary: #6366f1;
-            --primary-press: #4f46e5;
+            --bg: #071a13;
+            --surface: #0f231a;
+            --muted: #93b3a5;
+            --text: #e6f2ec;
+            --primary: #10b981;
+            --primary-press: #059669;
             --success: #10b981;
             --danger: #ef4444;
-            --card: rgba(17,24,39,0.85);
-            --border: 1px solid rgba(148,163,184,0.15);
-            --shadow: 0 20px 40px rgba(2,6,23,0.5);
+            --card: rgba(15,35,26,0.85);
+            --border: 1px solid rgba(147,179,165,0.18);
+            --shadow: 0 20px 40px rgba(2,20,12,0.5);
             --radius: 18px;
         }
         body.light {
-            --bg: #f6f7fb;
+            --bg: #eafaf1;
             --surface: #ffffff;
-            --muted: #64748b;
-            --text: #0f172a;
-            --primary: #3b82f6;
-            --primary-press: #2563eb;
+            --muted: #5c7d6e;
+            --text: #10251b;
+            --primary: #16a34a;
+            --primary-press: #15803d;
             --success: #16a34a;
             --danger: #dc2626;
             --card: rgba(255,255,255,0.9);
-            --border: 1px solid rgba(100,116,139,0.15);
-            --shadow: 0 20px 40px rgba(2,6,23,0.1);
+            --border: 1px solid rgba(22,163,74,0.16);
+            --shadow: 0 16px 36px rgba(16,80,50,0.1);
         }
 
         * {
@@ -42,7 +42,8 @@
             box-sizing: border-box;
         }
 
-        body {font-family:'Poppins',sans-serif;background:radial-gradient(1200px 600px at 10% 10%,#0b1020 0%,var(--bg) 40%),radial-gradient(800px 400px at 90% 10%,#181d31 0%,transparent 45%);min-height:100vh;padding:24px;display:flex;align-items:center;justify-content:center;color:var(--text)}
+        body {font-family:'Poppins',sans-serif;background:radial-gradient(1200px 600px at 10% 10%,#0b3b2a 0%,var(--bg) 40%),radial-gradient(800px 400px at 90% 10%,#064e3b 0%,transparent 45%);min-height:100vh;padding:24px;display:flex;align-items:center;justify-content:center;color:var(--text)}
+        body.light {background:radial-gradient(1200px 600px at 10% 10%,#bbf7d0 0%,var(--bg) 40%),radial-gradient(800px 400px at 90% 10%,#a7f3d0 0%,transparent 45%)}
         body:not(.worker-ok) .container,
         body:not(.worker-ok) .face-modal { visibility: hidden; }
 
@@ -64,7 +65,7 @@
             transform: translateY(-5px);
         }
 
-        .header {background:linear-gradient(90deg,rgba(99,102,241,.15),rgba(99,102,241,.05));color:var(--text);padding:24px 20px;text-align:center;position:relative}
+        .header {background:linear-gradient(90deg,rgba(16,163,74,.15),rgba(16,163,74,.05));color:var(--text);padding:24px 20px;text-align:center;position:relative}
 
         .header::after {
             content: '';
@@ -85,7 +86,7 @@
         .face-card video{width:100%;border-radius:14px;background:#000;min-height:220px}
         .face-actions{display:flex;gap:10px;margin-top:12px}
         .top-controls{position:absolute;right:16px;top:16px;display:flex;gap:8px}
-        .toggle {display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;background:rgba(99,102,241,.12);color:var(--text);cursor:pointer}
+        .toggle {display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;background:rgba(16,163,74,.12);color:var(--text);cursor:pointer}
 
         .content {
             padding: 30px;
@@ -142,12 +143,12 @@
         .status-error {background:var(--danger);color:var(--danger)}
 
         .input {width:100%;padding:16px 18px;border:2px solid rgba(148,163,184,.2);border-radius:14px;margin-bottom:18px;font-size:16px;background:rgba(255,255,255,.06);color:var(--text);transition:.2s}
-        .input:focus {border-color:var(--primary);outline:none;box-shadow:0 0 0 4px rgba(99,102,241,.15)}
+        .input:focus {border-color:var(--primary);outline:none;box-shadow:0 0 0 4px rgba(16,163,74,.15)}
 
         .worker-select:focus {
-            border-color: #3498db;
+            border-color: var(--primary);
             outline: none;
-            box-shadow: 0 0 0 4px rgba(52, 152, 219, 0.1);
+            box-shadow: 0 0 0 4px rgba(16,163,74,.1);
         }
 
         .actions {display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:22px}
@@ -232,8 +233,8 @@
     </style>
 </head>
 
-<body>
-    <script src="session.js?v=20260907render"></script>
+<body class="light">
+    <script src="session.js?v=20261106speed1"></script>
     <script>localStorage.removeItem('authWorker');</script>
     <div class="container">
         <div class="header">
@@ -289,12 +290,12 @@
         </div>
     </div>
 
-    <script src="worker-app.js?v=20261104polygon2"></script>
+    <script src="worker-app.js?v=20261106speed1"></script>
     <script>
         (function(){
             const t=document.getElementById('themeToggle');
-            const d=localStorage.getItem('geo_theme')||'dark';
-            if(d==='light') document.body.classList.add('light');
+            const d=localStorage.getItem('geo_theme')||'light';
+            document.body.classList.toggle('light', d==='light');
             t.addEventListener('click',()=>{
                 document.body.classList.toggle('light');
                 localStorage.setItem('geo_theme', document.body.classList.contains('light')?'light':'dark');

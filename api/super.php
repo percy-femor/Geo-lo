@@ -408,6 +408,106 @@ try {
     }
 
     if ($method === 'DELETE') {
+        if ($action === 'delete_organization') {
+            $id = (int)($data['id'] ?? 0);
+            if (!$id) sendResponse(["error" => "Organization ID required"], 400);
+
+            $stmt = $db->prepare("SELECT id, name FROM organizations WHERE id = ?");
+            $stmt->execute([$id]);
+            $org = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$org) sendResponse(["error" => "Organization not found"], 404);
+
+            $workerIds = $db->prepare("SELECT id FROM workers WHERE organization_id = ?");
+            $workerIds->execute([$id]);
+            $workers = array_map('intval', $workerIds->fetchAll(PDO::FETCH_COLUMN));
+
+            $adminIds = $db->prepare("SELECT id FROM admins WHERE organization_id = ?");
+            $adminIds->execute([$id]);
+            $admins = array_map('intval', $adminIds->fetchAll(PDO::FETCH_COLUMN));
+
+            $locationIds = $db->prepare("SELECT id FROM locations WHERE organization_id = ?");
+            $locationIds->execute([$id]);
+            $locations = array_map('intval', $locationIds->fetchAll(PDO::FETCH_COLUMN));
+
+            $shiftIds = $db->prepare("SELECT id FROM shifts WHERE organization_id = ?");
+            $shiftIds->execute([$id]);
+            $shifts = array_map('intval', $shiftIds->fetchAll(PDO::FETCH_COLUMN));
+
+            $workerIn = $workers ? implode(',', $workers) : '';
+            $adminIn = $admins ? implode(',', $admins) : '';
+            $locationIn = $locations ? implode(',', $locations) : '';
+            $shiftIn = $shifts ? implode(',', $shifts) : '';
+
+            $db->beginTransaction();
+            try {
+                // Attendance references locations without cascade, so clear it first.
+                if ($workerIn && $locationIn) {
+                    $db->exec("DELETE FROM attendance WHERE worker_id IN ($workerIn) OR location_id IN ($locationIn)");
+                } elseif ($workerIn) {
+                    $db->exec("DELETE FROM attendance WHERE worker_id IN ($workerIn)");
+                } elseif ($locationIn) {
+                    $db->exec("DELETE FROM attendance WHERE location_id IN ($locationIn)");
+                }
+
+                $alertConds = ["organization_id = $id"];
+                if ($workerIn) $alertConds[] = "worker_id IN ($workerIn)";
+                $db->exec("DELETE FROM alerts WHERE " . implode(' OR ', $alertConds));
+
+                if ($workerIn) {
+                    if (tableExists($db, 'punch_attempts')) {
+                        $db->exec("DELETE FROM punch_attempts WHERE worker_id IN ($workerIn)");
+                    }
+                    if (tableExists($db, 'worker_faces')) {
+                        $db->exec("DELETE FROM worker_faces WHERE worker_id IN ($workerIn)");
+                    }
+                    if (tableExists($db, 'password_resets')) {
+                        $db->exec("DELETE FROM password_resets WHERE worker_id IN ($workerIn)");
+                    }
+                }
+
+                $sessionConds = [];
+                if ($workerIn) $sessionConds[] = "(role = 'worker' AND user_id IN ($workerIn))";
+                if ($adminIn) $sessionConds[] = "(role = 'admin' AND user_id IN ($adminIn))";
+                if ($sessionConds) {
+                    $db->exec("DELETE FROM sessions WHERE " . implode(' OR ', $sessionConds));
+                }
+
+                $db->exec("DELETE FROM workers WHERE organization_id = $id");
+                // Clear dangling references held by workers of other organizations.
+                if ($locationIn) {
+                    $db->exec("UPDATE workers SET assigned_location_id = NULL WHERE assigned_location_id IN ($locationIn)");
+                }
+                if ($shiftIn) {
+                    $db->exec("UPDATE workers SET shift_id = NULL WHERE shift_id IN ($shiftIn)");
+                }
+                $db->exec("DELETE FROM locations WHERE organization_id = $id");
+                $db->exec("DELETE FROM shifts WHERE organization_id = $id");
+                $db->exec("DELETE FROM admins WHERE organization_id = $id");
+                $db->exec("DELETE FROM audit_log WHERE organization_id = $id");
+                $db->exec("DELETE FROM organizations WHERE id = $id");
+
+                $db->commit();
+            } catch (Exception $e) {
+                $db->rollBack();
+                throw $e;
+            }
+
+            writeAudit($db, $session, 'delete', 'organization', $org['id'], [
+                'name' => $org['name'],
+                'workers_removed' => count($workers),
+                'admins_removed' => count($admins),
+                'locations_removed' => count($locations)
+            ]);
+            sendResponse([
+                "message" => "Organization deleted",
+                "deleted" => [
+                    "workers" => count($workers),
+                    "admins" => count($admins),
+                    "locations" => count($locations)
+                ]
+            ]);
+        }
+
         if ($action === 'revoke_session') {
             $id = (int)($data['id'] ?? 0);
             if (!$id) sendResponse(["error" => "Session ID required"], 400);

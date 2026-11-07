@@ -16,6 +16,20 @@ function getRequestToken() {
     return null;
 }
 
+function serveHtmlWithBoot($file, $boot) {
+    $html = file_get_contents($file);
+    if ($html === false) {
+        http_response_code(500);
+        echo 'Page not found';
+        return;
+    }
+    $inject = '<script>window.__GEO_BOOT=' . json_encode($boot, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) . ';</script>';
+    $html = preg_replace_callback('/<head(\s[^>]*)?>/i', function ($m) use ($inject) {
+        return $m[0] . $inject;
+    }, $html, 1);
+    echo $html;
+}
+
 function sessionCookieOptions($expires) {
     $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
         || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');

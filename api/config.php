@@ -319,8 +319,8 @@ function ensureGeoLoSchema($db) {
     if ($done || !$db) return;
     $done = true;
 
+    // Fast path: read the stored version without running any DDL.
     try {
-        $db->exec("CREATE TABLE IF NOT EXISTS schema_meta (meta_key VARCHAR(64) PRIMARY KEY, meta_value VARCHAR(255) NULL)");
         $stmt = $db->prepare("SELECT meta_value FROM schema_meta WHERE meta_key = 'schema_version'");
         $stmt->execute();
         $current = $stmt->fetchColumn();
@@ -328,7 +328,12 @@ function ensureGeoLoSchema($db) {
             return;
         }
     } catch (Exception $e) {
-        // Fall through to full migration if the version check itself fails.
+        // schema_meta is missing on a fresh database — create it and migrate below.
+        try {
+            $db->exec("CREATE TABLE IF NOT EXISTS schema_meta (meta_key VARCHAR(64) PRIMARY KEY, meta_value VARCHAR(255) NULL)");
+        } catch (Exception $e2) {
+            return;
+        }
     }
 
     $db->exec("CREATE TABLE IF NOT EXISTS organizations (
