@@ -230,6 +230,26 @@
             color: #7f8c8d;
             padding-left: 24px;
         }
+
+        .location-head {display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px}
+
+        .location-head .status-indicator {margin-bottom:0;flex:1}
+
+        .refresh-btn {display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border:1px solid rgba(16,163,74,.35);border-radius:999px;background:rgba(16,163,74,.12);color:var(--primary);font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;transition:.2s;white-space:nowrap}
+
+        .refresh-btn:hover {background:rgba(16,163,74,.2)}
+
+        .refresh-btn:active {transform:scale(.96)}
+
+        .refresh-btn svg {display:block}
+
+        .refresh-btn.spinning {opacity:.75;pointer-events:none}
+
+        .refresh-btn.spinning svg {animation:geo-spin .8s linear infinite}
+
+        @keyframes geo-spin { to { transform: rotate(360deg); } }
+
+        .location-meta {margin-top:8px;font-size:12px;color:var(--muted);padding-left:24px;min-height:15px}
     </style>
 </head>
 
@@ -248,12 +268,18 @@
 
         <div class="content">
             <div class="location-status">
-                <div class="status-indicator">
-                    <div class="status-dot" id="statusDot"></div>
-                    <span id="locationStatus">Checking your location...</span>
+                <div class="location-head">
+                    <div class="status-indicator">
+                        <div class="status-dot" id="statusDot"></div>
+                        <span id="locationStatus">Checking your location...</span>
+                    </div>
+                    <button type="button" class="refresh-btn" id="refreshLocationBtn" title="Refresh location" aria-label="Refresh location">
+                        <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M12 5V2L7 6l5 4V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7z"/></svg>
+                        <span>Refresh</span>
+                    </button>
                 </div>
                 <div id="distanceInfo"></div>
-                <button type="button" class="btn" id="locationRetryBtn" style="display:none;margin-top:10px;padding:8px 14px;font-size:0.8rem;background:var(--primary);color:#fff">Try again</button>
+                <div id="locationMeta" class="location-meta"></div>
             </div>
 
             <div id="message" class="message"></div>
@@ -291,7 +317,7 @@
         </div>
     </div>
 
-    <script src="worker-app.js?v=20261107a"></script>
+    <script src="worker-app.js?v=20261107c"></script>
     <script>
         (function(){
             const t=document.getElementById('themeToggle');

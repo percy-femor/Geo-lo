@@ -424,8 +424,11 @@ class AdminDashboard {
         const last = this.polygonPoints[this.polygonPoints.length - 1];
         this.showLocationMessage('Getting a precise GPS fix… stay still for a moment.', 'info');
         this.updateAutoLocationStatus('Getting a precise fix…', 'active');
-        this.capturePrecisePosition(last, (accuracy) => {
-            this.updateAutoLocationStatus(`Getting a precise fix… ±${Math.round(accuracy)} m`, 'active');
+        this.capturePrecisePosition(last, (live) => {
+            this.currentLocation = { latitude: live.lat, longitude: live.lng, accuracy: live.accuracy };
+            this.updateCoordinatesDisplay();
+            this.updateAccuracyDisplay();
+            this.updateAutoLocationStatus(`Getting a precise fix… ±${Math.round(live.accuracy)} m`, 'active');
         }).then((fix) => {
             this.currentLocation = { latitude: fix.lat, longitude: fix.lng, accuracy: fix.accuracy };
             this.updateAccuracyDisplay();
@@ -472,8 +475,8 @@ class AdminDashboard {
                 const lat = position.coords.latitude;
                 const lng = position.coords.longitude;
                 const accuracy = position.coords.accuracy || 9999;
-                if (onProgress) onProgress(accuracy);
                 const fix = { lat, lng, accuracy };
+                if (onProgress) onProgress(fix);
                 if (!best || accuracy < best.accuracy) best = fix;
                 const moved = !previous || this.calculateDistance(previous.lat, previous.lng, lat, lng) >= 2;
                 if (moved && accuracy <= 65) finish(fix);

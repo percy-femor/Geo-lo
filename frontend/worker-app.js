@@ -31,10 +31,7 @@ class WorkerApp {
         const nameEl = document.getElementById('workerNameLabel');
         if (nameEl && this.currentWorker) nameEl.textContent = this.currentWorker.name || this.currentWorker.email || '';
         document.getElementById('logoutBtn')?.addEventListener('click', () => this.logout());
-        document.getElementById('locationRetryBtn')?.addEventListener('click', () => {
-            document.getElementById('locationRetryBtn').style.display = 'none';
-            this.startLocationTracking();
-        });
+        document.getElementById('refreshLocationBtn')?.addEventListener('click', () => this.refreshLocation());
         document.getElementById('captureFaceBtn')?.addEventListener('click', () => this.confirmFace());
         document.getElementById('cancelFaceBtn')?.addEventListener('click', () => this.closeFaceModal(true));
         await this.loadLocations();
@@ -77,7 +74,7 @@ class WorkerApp {
             return;
         }
         const options = { enableHighAccuracy: true, timeout: 25000, maximumAge: 0 };
-        if (this.watchId !== undefined && this.watchId !== null) {
+        if (this.watchId !== null) {
             navigator.geolocation.clearWatch(this.watchId);
             this.watchId = null;
         }
@@ -85,20 +82,31 @@ class WorkerApp {
         this.locationInitTimeout = setTimeout(() => {
             if (!this.currentLocation) {
                 this.updateLocationStatus(false, 'Location not available. Allow location access and ensure GPS is on');
+                document.getElementById('refreshLocationBtn')?.classList.remove('spinning');
             }
         }, 8000);
 
         const onOk = (position) => {
+            const accuracy = position.coords.accuracy || null;
             this.currentLocation = {
                 latitude: position.coords.latitude,
                 longitude: position.coords.longitude
             };
-            this.currentAccuracy = position.coords.accuracy || null;
+            this.currentAccuracy = accuracy;
+            this.lastLocationAt = Date.now();
+            if (this.locationInitTimeout) { clearTimeout(this.locationInitTimeout); this.locationInitTimeout = null; }
+            document.getElementById('refreshLocationBtn')?.classList.remove('spinning');
+            this.updateLocationMeta();
+            // A rough fix can land you inside/outside by mistake. Only decide the geofence
+            // once the fix is good enough; otherwise keep waiting for a better one.
+            if (accuracy !== null && accuracy > 100) {
+                this.isWithinGeofence = false;
+                this.updateLocationStatus(false, `Waiting for a better GPS signal… (currently ±${Math.round(accuracy)}m)`);
+                this.updateButtonStates();
+                return;
+            }
             this.checkGeofence();
             this.updateButtonStates();
-            const retryBtn = document.getElementById('locationRetryBtn');
-            if (retryBtn) retryBtn.style.display = 'none';
-            if (this.locationInitTimeout) { clearTimeout(this.locationInitTimeout); this.locationInitTimeout = null; }
         };
         const onErr = (error) => {
             const code = error && error.code;
@@ -119,11 +127,28 @@ class WorkerApp {
                 message = 'Unknown location error.';
             }
             this.updateLocationStatus(false, message);
-            const retryBtn = document.getElementById('locationRetryBtn');
-            if (retryBtn) retryBtn.style.display = 'inline-block';
+            document.getElementById('refreshLocationBtn')?.classList.remove('spinning');
         };
         navigator.geolocation.getCurrentPosition(onOk, onErr, options);
         this.watchId = navigator.geolocation.watchPosition(onOk, onErr, options);
+    }
+
+    refreshLocation() {
+        const btn = document.getElementById('refreshLocationBtn');
+        if (btn) btn.classList.add('spinning');
+        this.updateLocationMeta('Refreshing location…');
+        this.startLocationTracking();
+        setTimeout(() => btn?.classList.remove('spinning'), 6000);
+    }
+
+    updateLocationMeta(note) {
+        const meta = document.getElementById('locationMeta');
+        if (!meta) return;
+        if (note) { meta.textContent = note; return; }
+        if (!this.currentLocation) { meta.textContent = ''; return; }
+        const acc = this.currentAccuracy ? `±${Math.round(this.currentAccuracy)}m` : 'accuracy unknown';
+        const when = this.lastLocationAt ? new Date(this.lastLocationAt).toLocaleTimeString() : '';
+        meta.textContent = `GPS signal ${acc}${when ? ` · updated ${when}` : ''}`;
     }
 
     checkGeofence() {
@@ -133,7 +158,7 @@ class WorkerApp {
             return;
         }
         // Small grace zone so minor GPS jitter at the boundary does not block a valid punch.
-        const grace = Math.min(Number(this.currentAccuracy || 0), 10);
+        const grace = Math.min(Number(this.currentAccuracy || 0), 15);
         let nearest = { distance: Infinity, location: null };
         let misconfigured = false;
         for (const location of this.workplaceLocations) {
