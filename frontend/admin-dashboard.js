@@ -432,9 +432,32 @@ class AdminDashboard {
         }).then((fix) => {
             this.currentLocation = { latitude: fix.lat, longitude: fix.lng, accuracy: fix.accuracy };
             this.updateAccuracyDisplay();
+            const accuracy = Number(fix.accuracy);
+            // A coarse fix can be hundreds of metres (or a whole town) out. Refuse to save a
+            // wrong corner instead of quietly recording a coordinate that is not where you are.
+            if (Number.isFinite(accuracy) && accuracy > 100) {
+                this.updateAutoLocationStatus('GPS fix too rough', 'inactive');
+                this.showLocationMessage(
+                    `Your device is only locating you to about ±${Math.round(accuracy)} m, so this corner would be wrong. ` +
+                    'Stand still in the open with Precise Location on, or use “Pick points on map” to click the corner yourself.',
+                    'error'
+                );
+                return;
+            }
             if (last && this.calculateDistance(last.lat, last.lng, fix.lat, fix.lng) < 1) {
                 this.updateAutoLocationStatus('Location not changing', 'inactive');
                 this.showLocationMessage(this.sameLocationMessage(), 'error');
+                return;
+            }
+            // Devices without real GPS (laptops, or phones using a network fix) can report a
+            // confident-looking position that is a whole town away. Catch that here.
+            if (last && this.calculateDistance(last.lat, last.lng, fix.lat, fix.lng) > 5000) {
+                this.updateAutoLocationStatus('Fix looks wrong', 'inactive');
+                this.showLocationMessage(
+                    'That position is more than 5 km from your last corner, which usually means the device is using an approximate (network) location. ' +
+                    'Move into the open with GPS and Precise Location on, or use “Pick points on map”.',
+                    'error'
+                );
                 return;
             }
             if (this.addPolygonPoint(fix.lat, fix.lng)) {
@@ -602,11 +625,13 @@ class AdminDashboard {
     refreshMapTiles() {
         if (!this.map) return;
         if (this.tileLayer) this.map.removeLayer(this.tileLayer);
-        const dark = !document.body.classList.contains('light');
-        const url = dark
-            ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-            : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-        this.tileLayer = L.tileLayer(url, { attribution: '© OpenStreetMap' }).addTo(this.map);
+        // Satellite imagery (same approach as the farm app) so the administrator can see the
+        // real ground while tracing the workspace. A street map makes it impossible to tell
+        // whether a captured GPS point actually sits where the person is standing.
+        this.tileLayer = L.tileLayer(
+            'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+            { attribution: 'Imagery © Esri, Maxar, Earthstar Geographics', maxZoom: 19 }
+        ).addTo(this.map);
     }
 
     ensureMap() {
