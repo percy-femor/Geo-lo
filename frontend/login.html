@@ -29,7 +29,7 @@
         .input-with-icon input{padding-right:44px}
         .toggle-btn{position:absolute;right:8px;top:50%;transform:translateY(-50%);background:transparent;border:none;cursor:pointer;font-size:1rem;color:var(--muted);padding:6px}
     </style>
-    <script src="session.js?v=20261106speed1"></script>
+    <script src="session.js?v=20261107a"></script>
     <script>
         (function(){
             const d=localStorage.getItem('geo_theme')||'light';
@@ -42,19 +42,20 @@
                 if(msg){msg.textContent='Sign in with a worker account to open attendance.';msg.className='message error';}
             }
         });
-        async function login(){
+        async function login(btn){
             const email=document.getElementById('loginEmail').value.trim();
             const pin=document.getElementById('loginPin').value.trim();
             const msg=document.getElementById('msg');
             if(!email||!pin){msg.textContent='Enter email and PIN';msg.className='message error';return}
+            if(btn)GeoSession.setButtonLoading(btn,true);
             try{
                 const fingerprint=await GeoSession.fingerprint();
                 const res=await fetch(GeoSession.apiUrl('auth.php'),{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({email,pin,device_fingerprint:fingerprint})});
                 const j=await res.json();
-                if(!res.ok||j.error){msg.textContent=j.error||'Invalid credentials';msg.className='message error';return}
+                if(!res.ok||j.error){msg.textContent=j.error||'Invalid credentials';msg.className='message error';if(btn)GeoSession.setButtonLoading(btn,false);return}
                 GeoSession.set(j.token,'worker',j.user||j);
                 window.location.href='worker.php';
-            }catch(e){msg.textContent='Network error';msg.className='message error'}
+            }catch(e){msg.textContent='Network error';msg.className='message error';if(btn)GeoSession.setButtonLoading(btn,false)}
         }
     </script>
     </head>
@@ -71,7 +72,7 @@
                 <input type="password" class="input" id="loginPin" placeholder="PIN" />
                 <button type="button" class="toggle-btn" onclick="(function(el){var i=document.getElementById('loginPin');if(!i)return;var s=i.getAttribute('type')==='password';i.setAttribute('type', s?'text':'password');el.textContent=s?'🙈':'👁️';})(this)">👁️</button>
             </div>
-            <button class="btn" onclick="login()">Login</button>
+            <button class="btn" id="loginBtn" onclick="login(this)">Login</button>
             <div class="link"><a href="reset.html">Forgot PIN or Password?</a></div>
             <div class="link"><a href="admin-login.html">Organization admin</a></div>
             <div class="link"><a href="super-login.html">Geo-Lo owner</a></div>

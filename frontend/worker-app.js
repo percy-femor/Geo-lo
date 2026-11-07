@@ -8,6 +8,7 @@ class WorkerApp {
         this.hasActiveCheckIn = false;
         this.currentAccuracy = null;
         this.locationInitTimeout = null;
+        this.watchId = null;
         this.faceStream = null;
         this.pendingAction = null;
         this.init();
@@ -30,6 +31,10 @@ class WorkerApp {
         const nameEl = document.getElementById('workerNameLabel');
         if (nameEl && this.currentWorker) nameEl.textContent = this.currentWorker.name || this.currentWorker.email || '';
         document.getElementById('logoutBtn')?.addEventListener('click', () => this.logout());
+        document.getElementById('locationRetryBtn')?.addEventListener('click', () => {
+            document.getElementById('locationRetryBtn').style.display = 'none';
+            this.startLocationTracking();
+        });
         document.getElementById('captureFaceBtn')?.addEventListener('click', () => this.confirmFace());
         document.getElementById('cancelFaceBtn')?.addEventListener('click', () => this.closeFaceModal(true));
         await this.loadLocations();
@@ -72,6 +77,10 @@ class WorkerApp {
             return;
         }
         const options = { enableHighAccuracy: true, timeout: 25000, maximumAge: 0 };
+        if (this.watchId !== undefined && this.watchId !== null) {
+            navigator.geolocation.clearWatch(this.watchId);
+            this.watchId = null;
+        }
         if (this.locationInitTimeout) clearTimeout(this.locationInitTimeout);
         this.locationInitTimeout = setTimeout(() => {
             if (!this.currentLocation) {
@@ -87,15 +96,21 @@ class WorkerApp {
             this.currentAccuracy = position.coords.accuracy || null;
             this.checkGeofence();
             this.updateButtonStates();
+            const retryBtn = document.getElementById('locationRetryBtn');
+            if (retryBtn) retryBtn.style.display = 'none';
             if (this.locationInitTimeout) { clearTimeout(this.locationInitTimeout); this.locationInitTimeout = null; }
         };
         const onErr = (error) => {
             const code = error && error.code;
+            const ios = /iP(hone|ad|od)/.test(navigator.userAgent)
+                || (navigator.platform === 'MacIntel' && (navigator.maxTouchPoints || 0) > 1);
             let message;
             if (!window.isSecureContext) {
                 message = 'Location needs an https:// connection. Open the site securely, then allow location.';
             } else if (code === 1) {
-                message = 'Location is blocked for this site. Tap the padlock / ⓘ icon in the address bar → Permissions → Location → Allow, then reload.';
+                message = ios
+                    ? 'Location is blocked for this site. Tap the “aA” button next to the address bar → Website Settings → Location → Allow, then Reload. (Or iPhone Settings → Safari → Location → Ask/Allow.)'
+                    : 'Location is blocked for this site. Tap the padlock / tune icon in the address bar → Permissions → Location → Allow, then reload.';
             } else if (code === 2) {
                 message = 'Location unavailable. Turn on GPS / Location services and move near a window, then reload.';
             } else if (code === 3) {
@@ -104,9 +119,11 @@ class WorkerApp {
                 message = 'Unknown location error.';
             }
             this.updateLocationStatus(false, message);
+            const retryBtn = document.getElementById('locationRetryBtn');
+            if (retryBtn) retryBtn.style.display = 'inline-block';
         };
         navigator.geolocation.getCurrentPosition(onOk, onErr, options);
-        navigator.geolocation.watchPosition(onOk, onErr, options);
+        this.watchId = navigator.geolocation.watchPosition(onOk, onErr, options);
     }
 
     checkGeofence() {
@@ -348,6 +365,8 @@ class WorkerApp {
     }
 
     async submitPunch(action, image) {
+        const btn = document.getElementById(action === 'checkout' ? 'checkoutBtn' : 'checkinBtn');
+        GeoSession.setButtonLoading(btn, true);
         try {
             const fingerprint = await GeoSession.fingerprint();
             const body = {
@@ -381,7 +400,7 @@ class WorkerApp {
             }
             if (result.success) {
                 this.showMessage(result.message, 'success');
-                this.loadTodayAttendance();
+                await this.loadTodayAttendance();
             } else {
                 const msg = result.error || result.message || 'Request failed';
                 this.showMessage(msg, 'error');
@@ -392,6 +411,9 @@ class WorkerApp {
             }
         } catch (error) {
             this.showMessage('Check-in did not complete. Stay on this page and try again.', 'error');
+        } finally {
+            GeoSession.setButtonLoading(btn, false);
+            this.updateButtonStates();
         }
     }
 

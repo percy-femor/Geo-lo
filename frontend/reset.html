@@ -42,8 +42,8 @@
                 <input type="email" id="email" placeholder="Enter your email">
             </div>
             <div class="actions">
-                <button class="btn btn-primary" onclick="requestReset()">Request Reset Token</button>
-                <button class="btn btn-success" onclick="confirmReset()">Confirm Reset</button>
+                <button class="btn btn-primary" onclick="requestReset(this)">Request Reset Token</button>
+                <button class="btn btn-success" onclick="confirmReset(this)">Confirm Reset</button>
             </div>
             <div class="group" style="margin-top:12px">
                 <label>Reset Token</label>
@@ -60,11 +60,34 @@
             <a href="login.html" class="link">Back to login</a>
         </div>
     </div>
-    <script src="session.js?v=20261106speed1"></script>
+    <script src="session.js?v=20261107a"></script>
     <script>
         function showMsg(text,type){const m=document.getElementById('msg');m.textContent=text;m.className='message '+type;m.style.display='block'}
-        async function requestReset(){const email=document.getElementById('email').value.trim();if(!email){showMsg('Enter your email','error');return;}const res=await fetch(GeoSession.apiUrl('password_reset.php'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'request',email})});const j=await res.json();if(j.token){document.getElementById('token').value=j.token;}showMsg(j.message||j.error||'Error',j.error?'error':'success')}
-        async function confirmReset(){const email=document.getElementById('email').value.trim();const token=document.getElementById('token').value.trim();const newPassword=document.getElementById('newPassword').value.trim();if(!email||!token||!newPassword){showMsg('Provide email, token and new password','error');return;}const res=await fetch(GeoSession.apiUrl('password_reset.php'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'confirm',email,token,new_password:newPassword})});const j=await res.json();showMsg(j.message||j.error||'Error',j.error?'error':'success')}
+        async function requestReset(btn){
+            const email=document.getElementById('email').value.trim();
+            if(!email){showMsg('Enter your email','error');return;}
+            GeoSession.setButtonLoading(btn,true);
+            try{
+                const res=await fetch(GeoSession.apiUrl('password_reset.php'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'request',email})});
+                const j=await res.json();
+                if(j.token){document.getElementById('token').value=j.token;}
+                showMsg(j.message||j.error||'Error',j.error?'error':'success');
+            }catch(e){showMsg('Network error','error');}
+            GeoSession.setButtonLoading(btn,false);
+        }
+        async function confirmReset(btn){
+            const email=document.getElementById('email').value.trim();
+            const token=document.getElementById('token').value.trim();
+            const newPassword=document.getElementById('newPassword').value.trim();
+            if(!email||!token||!newPassword){showMsg('Provide email, token and new password','error');return;}
+            GeoSession.setButtonLoading(btn,true);
+            try{
+                const res=await fetch(GeoSession.apiUrl('password_reset.php'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'confirm',email,token,new_password:newPassword})});
+                const j=await res.json();
+                showMsg(j.message||j.error||'Error',j.error?'error':'success');
+            }catch(e){showMsg('Network error','error');}
+            GeoSession.setButtonLoading(btn,false);
+        }
     </script>
     </body>
     </html>

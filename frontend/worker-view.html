@@ -234,7 +234,7 @@
 </head>
 
 <body class="light">
-    <script src="session.js?v=20261106speed1"></script>
+    <script src="session.js?v=20261107a"></script>
     <script>localStorage.removeItem('authWorker');</script>
     <div class="container">
         <div class="header">
@@ -253,6 +253,7 @@
                     <span id="locationStatus">Checking your location...</span>
                 </div>
                 <div id="distanceInfo"></div>
+                <button type="button" class="btn" id="locationRetryBtn" style="display:none;margin-top:10px;padding:8px 14px;font-size:0.8rem;background:var(--primary);color:#fff">Try again</button>
             </div>
 
             <div id="message" class="message"></div>
@@ -290,7 +291,7 @@
         </div>
     </div>
 
-    <script src="worker-app.js?v=20261106speed1"></script>
+    <script src="worker-app.js?v=20261107a"></script>
     <script>
         (function(){
             const t=document.getElementById('themeToggle');

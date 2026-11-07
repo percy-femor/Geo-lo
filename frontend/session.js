@@ -20,6 +20,32 @@ const GeoSession = {
         localStorage.removeItem(this.userKey);
         localStorage.removeItem('authWorker');
     },
+    loadingCssReady: false,
+    injectLoadingCss() {
+        if (this.loadingCssReady || typeof document === 'undefined') return;
+        this.loadingCssReady = true;
+        const style = document.createElement('style');
+        style.id = 'geo-btn-loading-style';
+        style.textContent = '.geo-btn-loading{position:relative;pointer-events:none;color:transparent!important}.geo-btn-loading>*{visibility:hidden}.geo-btn-loading::after{content:"";position:absolute;top:50%;left:50%;width:16px;height:16px;margin:-8px 0 0 -8px;border:2px solid rgba(255,255,255,.45);border-top-color:#fff;border-radius:50%;animation:geo-btn-spin .6s linear infinite;visibility:visible}@keyframes geo-btn-spin{to{transform:rotate(360deg)}}';
+        document.head.appendChild(style);
+    },
+    setButtonLoading(button, isLoading) {
+        if (!button) return;
+        this.injectLoadingCss();
+        if (isLoading) {
+            if (!button.classList.contains('geo-btn-loading')) {
+                button.dataset.geoWasDisabled = button.disabled ? '1' : '0';
+            }
+            button.classList.add('geo-btn-loading');
+            button.disabled = true;
+            button.setAttribute('aria-busy', 'true');
+        } else {
+            button.classList.remove('geo-btn-loading');
+            button.disabled = button.dataset.geoWasDisabled === '1';
+            delete button.dataset.geoWasDisabled;
+            button.removeAttribute('aria-busy');
+        }
+    },
     headers() {
         const token = this.getToken();
         const headers = { Accept: 'application/json' };

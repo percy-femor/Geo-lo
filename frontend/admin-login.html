@@ -49,7 +49,7 @@
             <div class="link"><a href="login.html">Worker login</a></div>
         </div>
     </div>
-    <script src="session.js?v=20261106speed1"></script>
+    <script src="session.js?v=20261107a"></script>
     <script>
         (function () {
             const theme = localStorage.getItem('geo_theme') || 'light';
@@ -86,7 +86,9 @@
                 const email = document.getElementById('loginEmail').value.trim();
                 const password = document.getElementById('loginPassword').value;
                 const msg = document.getElementById('msg');
+                const btn = document.getElementById('loginBtn');
                 if (!email || !password) { msg.textContent = 'Enter email and password'; msg.className = 'message error'; return; }
+                GeoSession.setButtonLoading(btn, true);
                 try {
                     const fingerprint = await GeoSession.fingerprint();
                     const res = await fetch(GeoSession.apiUrl('auth.php'), {
@@ -99,12 +101,14 @@
                     if (!res.ok || j.error || j.role !== 'admin') {
                         msg.textContent = j.error || 'Invalid admin credentials';
                         msg.className = 'message error';
+                        GeoSession.setButtonLoading(btn, false);
                         return;
                     }
                     const user = Object.assign({}, j.user || {}, { privilege: (j.user && j.user.privilege) || j.privilege || 'admin' });
                     if (user.privilege === 'super_admin') {
                         msg.textContent = 'Geo-Lo owner accounts sign in on the owner login page.';
                         msg.className = 'message error';
+                        GeoSession.setButtonLoading(btn, false);
                         return;
                     }
                     GeoSession.set(j.token, 'admin', user);
@@ -112,6 +116,7 @@
                 } catch (e) {
                     msg.textContent = 'Network error';
                     msg.className = 'message error';
+                    GeoSession.setButtonLoading(btn, false);
                 }
             }
         })();

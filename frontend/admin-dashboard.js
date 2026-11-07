@@ -457,12 +457,20 @@ class AdminDashboard {
     async handleLocationError(error) {
         this.updateAutoLocationStatus('Location capture failed', 'inactive');
         const help = await this.describeLocationProblem(error);
+        const primary = help.denied
+            ? '<button type="button" class="btn btn-primary btn-sm" data-location-reload style="margin-top:10px">I changed it — reload</button>' +
+              ' <button type="button" class="btn btn-ghost btn-sm" data-location-retry style="margin-top:10px">Try again</button>'
+            : '<button type="button" class="btn btn-primary btn-sm" data-location-retry style="margin-top:10px">Try again</button>';
         this.showLocationMessage('', 'error', {
-            html: `<strong>${this.escapeHtml(help.title)}</strong><br>${this.escapeHtml(help.detail)}<br>` +
-                '<button type="button" class="btn btn-primary btn-sm" data-location-retry style="margin-top:10px">Try again</button>',
+            html: `<strong>${this.escapeHtml(help.title)}</strong><br>${this.escapeHtml(help.detail)}<br>` + primary,
             retry: true
         });
         this.toast(help.title, 'error', 'Location failed');
+    }
+
+    isIOS() {
+        return /iP(hone|ad|od)/.test(navigator.userAgent)
+            || (navigator.platform === 'MacIntel' && (navigator.maxTouchPoints || 0) > 1);
     }
 
     async describeLocationProblem(error) {
@@ -481,9 +489,13 @@ class AdminDashboard {
             }
         } catch (e) { /* permissions API not supported */ }
         if (code === 1 || permission === 'denied') {
+            const ios = this.isIOS();
             return {
                 title: 'Location is blocked for this site',
-                detail: 'Your browser has location switched off for this site, so it will not ask again. To turn it back on, tap the padlock / ⓘ icon in the address bar → Permissions (or Site settings) → Location → Allow, then tap Try again. iPhone (Safari): Settings → Safari → Location → Allow. Android (Chrome): tap the lock icon → Permissions → Location → Allow.'
+                denied: true,
+                detail: ios
+                    ? 'In Safari tap the “aA” button next to the address bar → Website Settings → set Location to Allow, then reload this page. If Location is not listed there, open the iPhone Settings app → Safari → Location and set it to Ask or Allow, then come back and reload. Also check Settings → Privacy & Security → Location Services is on.'
+                    : 'Your browser has location switched off for this site, so it will not ask again on its own. In Chrome/Edge tap the padlock (or tune) icon in the address bar → Permissions (or Site settings) → Location → Allow, then reload this page.'
             };
         }
         if (code === 2) {
@@ -851,6 +863,7 @@ class AdminDashboard {
         el.className = `location-message show ${type}`;
         if (options.retry) {
             el.querySelector('[data-location-retry]')?.addEventListener('click', () => this.addPointAtMyLocation());
+            el.querySelector('[data-location-reload]')?.addEventListener('click', () => window.location.reload());
         }
         if (type === 'success' && !options.html) {
             setTimeout(() => {
