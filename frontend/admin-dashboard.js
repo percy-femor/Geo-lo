@@ -430,7 +430,7 @@ class AdminDashboard {
         const last = this.polygonPoints[this.polygonPoints.length - 1];
         this.showLocationMessage('Getting a precise GPS fix… stay still for a moment.', 'info');
         this.updateAutoLocationStatus('Getting a precise fix…', 'active');
-        this.capturePrecisePosition(last, (live) => {
+        this.capturePrecisePosition((live) => {
             // Only update the status text here — never commit this.currentLocation from a
             // progress event, or a rough early fix can be shown as the captured position.
             this.updateAutoLocationStatus(`Getting a precise fix… ±${Math.round(live.accuracy)} m`, 'active');
@@ -479,37 +479,36 @@ class AdminDashboard {
         }).catch((error) => this.handleLocationError(error));
     }
 
-    // iOS Safari returns a cached, unchanging position from repeated getCurrentPosition()
-    // calls; watchPosition() streams fresh fixes. We resolve with the first precise fix that
-    // actually moved from the previous point and held steady, and otherwise only fall back to
-    // the best fix if it is still reasonably accurate. A low "accuracy" number does not mean
-    // the position is right: Wi-Fi fixes often report 30–60 m while being hundreds of metres out.
-    capturePrecisePosition(previous, onProgress) {
+    // iOS Safari can return a cached, unchanging position from repeated getCurrentPosition()
+    // calls, so we stream fresh fixes with watchPosition() instead. We accept a fix as soon as
+    // the browser reports a genuinely precise accuracy (a few metres) and otherwise fall back to
+    // the best fix seen within the window. Accuracy is the trustworthy signal here: a real GPS
+    // fix reports metres, while a Wi-Fi/approximate fix reports tens of metres or worse. We do
+    // NOT require artificial coordinate "jitter" — a stable, accurate receiver standing still
+    // simply does not drift, so demanding drift rejected valid corners and made capture fail
+    // even when location was working correctly.
+    capturePrecisePosition(onProgress) {
         return new Promise((resolve, reject) => {
             if (!navigator.geolocation) {
                 return reject({ code: 2, reason: 'unsupported' });
             }
 
             const options = { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 };
-            const settleAfter = previous ? 12000 : 8000;
-            const hardTimeout = 25000;
-            const PRECISE_THRESHOLD = 20;
-            const FALLBACK_THRESHOLD = 40;
-            const JITTER_MIN = 1.5;
+            const acceptAfter = 10000;
+            const hardTimeout = 20000;
+            const PRECISE_THRESHOLD = 25;
+            const FALLBACK_THRESHOLD = 50;
 
             let watchId = null;
-            let settleTimer = null;
+            let acceptTimer = null;
             let hardTimer = null;
             let best = null;
-            let stableCount = 0;
-            let lastGood = null;
             let settled = false;
-            const fixes = [];
 
             const cleanup = () => {
                 if (watchId !== null) navigator.geolocation.clearWatch(watchId);
                 watchId = null;
-                clearTimeout(settleTimer);
+                clearTimeout(acceptTimer);
                 clearTimeout(hardTimer);
             };
 
@@ -520,37 +519,22 @@ class AdminDashboard {
                 if (isError) reject(result); else resolve(result);
             };
 
-            // Real GPS jitters by a few metres even when standing perfectly still. A snapped
-            // or coarse (network) position stays frozen. If we never see that natural movement,
-            // the fix is almost certainly not a real GPS fix — reject it.
-            const spread = () => {
-                if (fixes.length < 2) return 0;
-                let max = 0;
-                for (let i = 0; i < fixes.length; i++) {
-                    for (let j = i + 1; j < fixes.length; j++) {
-                        const d = this.calculateDistance(
-                            fixes[i].lat, fixes[i].lng, fixes[j].lat, fixes[j].lng
-                        );
-                        if (d > max) max = d;
-                    }
-                }
-                return max;
-            };
-
-            const giveBest = () => {
-                if (best && best.accuracy <= FALLBACK_THRESHOLD && spread() >= JITTER_MIN) {
+            // Ran out of time: take the best fix we have if it is at least reasonably precise,
+            // otherwise report that no precise fix could be obtained.
+            const settle = () => {
+                if (best && best.accuracy <= FALLBACK_THRESHOLD) {
                     finish(best);
                 } else {
-                    const reason = spread() < JITTER_MIN ? 'static_position' : 'no_precise_fix';
-                    finish(
-                        { code: 3, reason, accuracy: best?.accuracy ?? 9999 },
-                        true
-                    );
+                    finish({ code: 3, reason: 'no_precise_fix', accuracy: best?.accuracy ?? 9999 }, true);
                 }
             };
 
-            settleTimer = setTimeout(giveBest, settleAfter);
-            hardTimer = setTimeout(giveBest, hardTimeout);
+            // If a precise fix has not arrived quickly, accept a merely reasonable one so the
+            // administrator is not left waiting for the full timeout.
+            acceptTimer = setTimeout(() => {
+                if (best && best.accuracy <= FALLBACK_THRESHOLD) finish(best);
+            }, acceptAfter);
+            hardTimer = setTimeout(settle, hardTimeout);
 
             watchId = navigator.geolocation.watchPosition(
                 (position) => {
@@ -559,28 +543,10 @@ class AdminDashboard {
                     const accuracy = position.coords.accuracy || 9999;
                     const fix = { lat, lng, accuracy };
 
-                    fixes.push(fix);
-                    if (fixes.length > 20) fixes.shift();
-
+                    if (!best || accuracy < best.accuracy) best = fix;
                     if (onProgress) onProgress(fix);
 
-                    if (!best || accuracy < best.accuracy) best = fix;
-
-                    // Stability check: two consecutive similar fixes
-                    if (lastGood && this.calculateDistance(lastGood.lat, lastGood.lng, lat, lng) < 3) {
-                        stableCount++;
-                    } else {
-                        stableCount = 0;
-                    }
-                    lastGood = fix;
-
-                    const moved = !previous || this.calculateDistance(previous.lat, previous.lng, lat, lng) >= 2;
-                    // Require: good accuracy, moved from the previous corner, AND the position has
-                    // shown natural GPS jitter (spread) — proves this is a real fix, not a frozen
-                    // coarse/snapped location.
-                    if (moved && accuracy <= PRECISE_THRESHOLD && stableCount >= 1 && spread() >= JITTER_MIN) {
-                        finish(fix);
-                    }
+                    if (accuracy <= PRECISE_THRESHOLD) finish(fix);
                 },
                 (error) => finish(error, true),
                 options
@@ -597,35 +563,6 @@ class AdminDashboard {
 
     async handleLocationError(error) {
         this.updateAutoLocationStatus('Location capture failed', 'inactive');
-
-        if (error?.code === 3 && error?.reason === 'static_position') {
-            const ios = this.isIOS();
-            this.showLocationMessage('', 'error', {
-                html:
-                    `<strong>Your device is returning a frozen position</strong><br>` +
-                    `The GPS coordinates are not changing, which means your browser is using a ` +
-                    `coarse/approximate location instead of real GPS. This is almost always ` +
-                    (ios
-                        ? `because <b>Precise Location is off for Safari</b>.<br><br>` +
-                          `<b>To fix it:</b><br>` +
-                          `1. Open the iPhone Settings app<br>` +
-                          `2. Privacy &amp; Security → Location Services → Safari Websites<br>` +
-                          `3. Turn on <b>Precise Location</b><br>` +
-                          `4. Come back and reload this page<br><br>` +
-                          `Or use “Pick points on map” to click the corners yourself.`
-                        : `because GPS isn't getting a real fix.<br><br>` +
-                          `<b>Try:</b><br>` +
-                          `• Move outside or near a window (GPS needs sky)<br>` +
-                          `• In Chrome: click the padlock → Site settings → Location → set to Precise<br>` +
-                          `• Or use “Pick points on map” to click the corners yourself.<br><br>`) +
-                    `<button type="button" class="btn btn-primary btn-sm" data-location-retry style="margin-top:10px">Try again</button> ` +
-                    `<button type="button" class="btn btn-ghost btn-sm" data-location-openmap style="margin-top:10px">Use map instead</button>`,
-                retry: true
-            });
-            document.querySelector('[data-location-openmap]')
-                ?.addEventListener('click', () => this.openMapPicker());
-            return;
-        }
 
         if (error?.code === 3 && error?.reason === 'no_precise_fix') {
             const reported = error.accuracy && error.accuracy < 9999

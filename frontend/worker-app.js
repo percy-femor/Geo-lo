@@ -79,10 +79,8 @@ class WorkerApp {
             this.watchId = null;
         }
         if (this.locationInitTimeout) clearTimeout(this.locationInitTimeout);
-        this._recentFixes = [];
-        this._locationJitterConfirmed = false;
         this.locationInitTimeout = setTimeout(() => {
-            if (!this._locationJitterConfirmed) {
+            if (!this.currentLocation) {
                 this.updateLocationStatus(false, 'GPS signal is weak or coarse. Make sure Precise Location is on, or tap Refresh.');
             }
             document.getElementById('refreshLocationBtn')?.classList.remove('spinning');
@@ -95,36 +93,17 @@ class WorkerApp {
             this.currentLocation = { latitude: lat, longitude: lng };
             this.currentAccuracy = accuracy;
             this.lastLocationAt = Date.now();
-            this._recentFixes.push({ lat, lng, accuracy });
-            if (this._recentFixes.length > 10) this._recentFixes.shift();
 
             document.getElementById('refreshLocationBtn')?.classList.remove('spinning');
             this.updateLocationMeta();
 
-            // Compute the spread of recent fixes. Real GPS jitters by a few metres even when
-            // standing still; a coarse/snapped (network) position stays frozen. Only trust the
-            // geofence verdict once we have seen that natural movement.
-            let spread = 0;
-            const fixes = this._recentFixes;
-            if (fixes.length >= 2) {
-                for (let i = 0; i < fixes.length; i++) {
-                    for (let j = i + 1; j < fixes.length; j++) {
-                        const d = this.calculateDistance(fixes[i].lat, fixes[i].lng, fixes[j].lat, fixes[j].lng);
-                        if (d > spread) spread = d;
-                    }
-                }
-            }
-            if (spread >= 1.5) this._locationJitterConfirmed = true;
-
+            // Accuracy is the reliable signal for whether this is a real GPS fix (a few metres)
+            // or a coarse Wi-Fi/approximate one (tens of metres or worse). We no longer wait for
+            // artificial coordinate "jitter", which a stable, accurate receiver does not produce
+            // and which was blocking check-in even when location was working correctly.
             if (accuracy !== null && accuracy > 50) {
                 this.isWithinGeofence = false;
                 this.updateLocationStatus(false, `Waiting for a better GPS signal… (currently ±${Math.round(accuracy)}m)`);
-                this.updateButtonStates();
-                return;
-            }
-            if (!this._locationJitterConfirmed) {
-                this.isWithinGeofence = false;
-                this.updateLocationStatus(false, `Waiting for a stable GPS fix… (±${accuracy ? Math.round(accuracy) : '?'}m)`);
                 this.updateButtonStates();
                 return;
             }
@@ -181,7 +160,9 @@ class WorkerApp {
             return;
         }
         // Small grace zone so minor GPS jitter at the boundary does not block a valid punch.
-        const grace = Math.min(Number(this.currentAccuracy || 0), 15);
+        // Keep this in step with the server (attendance.php uses min(accuracy, 10)) so the
+        // check-in button is never enabled for a position the server will then reject.
+        const grace = Math.min(Number(this.currentAccuracy || 0), 10);
         let nearest = { distance: Infinity, location: null };
         let misconfigured = false;
         for (const location of this.workplaceLocations) {
