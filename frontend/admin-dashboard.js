@@ -42,25 +42,25 @@ class AdminDashboard {
             document.body.classList.add('admin-ok');
             document.body.classList.remove('admin-pending');
             const user = GeoSession.getUser();
-        const brand = document.getElementById('orgBrand');
-        if (brand && user && user.organization_name) brand.textContent = user.organization_name;
-        const subtitle = document.getElementById('pageSubtitle');
-        if (subtitle && user && user.organization_name) {
-            this.pageCopy.dashboard[1] = `Who is on site at ${user.organization_name}`;
-            subtitle.textContent = this.pageCopy.dashboard[1];
-        }
-        this.applyStoredTheme();
-        this.setupThemeToggle();
-        this.setupMobileNav();
-        this.setupEventListeners();
-        this.setupTabNavigation();
-        this.setupConfirmModal();
-        this.setupEnhancedLocationGetter();
-        this.initializeDateInputs();
-        await this.refreshAll();
-        this.loadShifts();
-        this.loadAlerts();
-        this.loadLiveBoard();
+            const brand = document.getElementById('orgBrand');
+            if (brand && user && user.organization_name) brand.textContent = user.organization_name;
+            const subtitle = document.getElementById('pageSubtitle');
+            if (subtitle && user && user.organization_name) {
+                this.pageCopy.dashboard[1] = `Who is on site at ${user.organization_name}`;
+                subtitle.textContent = this.pageCopy.dashboard[1];
+            }
+            this.applyStoredTheme();
+            this.setupThemeToggle();
+            this.setupMobileNav();
+            this.setupEventListeners();
+            this.setupTabNavigation();
+            this.setupConfirmModal();
+            this.setupEnhancedLocationGetter();
+            this.initializeDateInputs();
+            await this.refreshAll();
+            this.loadShifts();
+            this.loadAlerts();
+            this.loadLiveBoard();
         } catch (error) {
             window.location.replace('admin-login.html');
         }
@@ -453,7 +453,8 @@ class AdminDashboard {
                 );
                 return;
             }
-            if (last && this.calculateDistance(last.lat, last.lng, fix.lat, fix.lng) < 5) {
+            // Allow a 1-meter threshold instead of 5-meter to avoid blocking iPhone drift.
+            if (last && this.calculateDistance(last.lat, last.lng, fix.lat, fix.lng) < 1) {
                 this.updateAutoLocationStatus('Location not changing', 'inactive');
                 this.showLocationMessage(this.sameLocationMessage(), 'error');
                 return;
