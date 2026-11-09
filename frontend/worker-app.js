@@ -79,32 +79,56 @@ class WorkerApp {
             this.watchId = null;
         }
         if (this.locationInitTimeout) clearTimeout(this.locationInitTimeout);
+        this._recentFixes = [];
+        this._locationJitterConfirmed = false;
         this.locationInitTimeout = setTimeout(() => {
-            if (!this.currentLocation) {
-                this.updateLocationStatus(false, 'Location not available. Allow location access and ensure GPS is on');
-                document.getElementById('refreshLocationBtn')?.classList.remove('spinning');
+            if (!this._locationJitterConfirmed) {
+                this.updateLocationStatus(false, 'GPS signal is weak or coarse. Make sure Precise Location is on, or tap Refresh.');
             }
-        }, 8000);
+            document.getElementById('refreshLocationBtn')?.classList.remove('spinning');
+        }, 10000);
 
         const onOk = (position) => {
             const accuracy = position.coords.accuracy || null;
-            this.currentLocation = {
-                latitude: position.coords.latitude,
-                longitude: position.coords.longitude
-            };
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+            this.currentLocation = { latitude: lat, longitude: lng };
             this.currentAccuracy = accuracy;
             this.lastLocationAt = Date.now();
-            if (this.locationInitTimeout) { clearTimeout(this.locationInitTimeout); this.locationInitTimeout = null; }
+            this._recentFixes.push({ lat, lng, accuracy });
+            if (this._recentFixes.length > 10) this._recentFixes.shift();
+
             document.getElementById('refreshLocationBtn')?.classList.remove('spinning');
             this.updateLocationMeta();
-            // A rough fix can land you inside/outside by mistake. Only decide the geofence
-            // once the fix is good enough; otherwise keep waiting for a better one.
-            if (accuracy !== null && accuracy > 100) {
+
+            // Compute the spread of recent fixes. Real GPS jitters by a few metres even when
+            // standing still; a coarse/snapped (network) position stays frozen. Only trust the
+            // geofence verdict once we have seen that natural movement.
+            let spread = 0;
+            const fixes = this._recentFixes;
+            if (fixes.length >= 2) {
+                for (let i = 0; i < fixes.length; i++) {
+                    for (let j = i + 1; j < fixes.length; j++) {
+                        const d = this.calculateDistance(fixes[i].lat, fixes[i].lng, fixes[j].lat, fixes[j].lng);
+                        if (d > spread) spread = d;
+                    }
+                }
+            }
+            if (spread >= 1.5) this._locationJitterConfirmed = true;
+
+            if (accuracy !== null && accuracy > 50) {
                 this.isWithinGeofence = false;
                 this.updateLocationStatus(false, `Waiting for a better GPS signal… (currently ±${Math.round(accuracy)}m)`);
                 this.updateButtonStates();
                 return;
             }
+            if (!this._locationJitterConfirmed) {
+                this.isWithinGeofence = false;
+                this.updateLocationStatus(false, `Waiting for a stable GPS fix… (±${accuracy ? Math.round(accuracy) : '?'}m)`);
+                this.updateButtonStates();
+                return;
+            }
+            if (this.locationInitTimeout) { clearTimeout(this.locationInitTimeout); this.locationInitTimeout = null; }
             this.checkGeofence();
             this.updateButtonStates();
         };
@@ -129,7 +153,6 @@ class WorkerApp {
             this.updateLocationStatus(false, message);
             document.getElementById('refreshLocationBtn')?.classList.remove('spinning');
         };
-        navigator.geolocation.getCurrentPosition(onOk, onErr, options);
         this.watchId = navigator.geolocation.watchPosition(onOk, onErr, options);
     }
 

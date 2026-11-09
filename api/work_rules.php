@@ -109,8 +109,8 @@ function refreshAbsenceAlerts($db, $date = null, $orgId = null) {
 }
 
 function gpsSanityCheck($db, $workerId, $lat, $lng, $accuracy) {
-    if ($accuracy !== null && $accuracy > 2500) {
-        return 'GPS signal is unusable (±' . (int)$accuracy . 'm). Enable location services and try again.';
+    if ($accuracy !== null && $accuracy > 100) {
+        return 'GPS signal is too rough (±' . (int)$accuracy . 'm). Move to an open area with Precise Location on, then try again.';
     }
     $stmt = $db->prepare("SELECT check_in, check_in_lat, check_in_lng, check_out, check_out_lat, check_out_lng FROM attendance WHERE worker_id = ? ORDER BY id DESC LIMIT 1");
     $stmt->execute([$workerId]);

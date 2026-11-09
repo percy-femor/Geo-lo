@@ -453,7 +453,7 @@ class AdminDashboard {
                 );
                 return;
             }
-            if (last && this.calculateDistance(last.lat, last.lng, fix.lat, fix.lng) < 1) {
+            if (last && this.calculateDistance(last.lat, last.lng, fix.lat, fix.lng) < 5) {
                 this.updateAutoLocationStatus('Location not changing', 'inactive');
                 this.showLocationMessage(this.sameLocationMessage(), 'error');
                 return;
@@ -491,10 +491,11 @@ class AdminDashboard {
             }
 
             const options = { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 };
-            const settleAfter = previous ? 12000 : 7000;
+            const settleAfter = previous ? 12000 : 8000;
             const hardTimeout = 25000;
-            const PRECISE_THRESHOLD = 25;
-            const FALLBACK_THRESHOLD = 50;
+            const PRECISE_THRESHOLD = 20;
+            const FALLBACK_THRESHOLD = 40;
+            const JITTER_MIN = 1.5;
 
             let watchId = null;
             let settleTimer = null;
@@ -503,6 +504,7 @@ class AdminDashboard {
             let stableCount = 0;
             let lastGood = null;
             let settled = false;
+            const fixes = [];
 
             const cleanup = () => {
                 if (watchId !== null) navigator.geolocation.clearWatch(watchId);
@@ -518,12 +520,30 @@ class AdminDashboard {
                 if (isError) reject(result); else resolve(result);
             };
 
+            // Real GPS jitters by a few metres even when standing perfectly still. A snapped
+            // or coarse (network) position stays frozen. If we never see that natural movement,
+            // the fix is almost certainly not a real GPS fix — reject it.
+            const spread = () => {
+                if (fixes.length < 2) return 0;
+                let max = 0;
+                for (let i = 0; i < fixes.length; i++) {
+                    for (let j = i + 1; j < fixes.length; j++) {
+                        const d = this.calculateDistance(
+                            fixes[i].lat, fixes[i].lng, fixes[j].lat, fixes[j].lng
+                        );
+                        if (d > max) max = d;
+                    }
+                }
+                return max;
+            };
+
             const giveBest = () => {
-                if (best && best.accuracy <= FALLBACK_THRESHOLD) {
+                if (best && best.accuracy <= FALLBACK_THRESHOLD && spread() >= JITTER_MIN) {
                     finish(best);
                 } else {
+                    const reason = spread() < JITTER_MIN ? 'static_position' : 'no_precise_fix';
                     finish(
-                        { code: 3, reason: 'no_precise_fix', accuracy: best?.accuracy ?? 9999 },
+                        { code: 3, reason, accuracy: best?.accuracy ?? 9999 },
                         true
                     );
                 }
@@ -539,6 +559,9 @@ class AdminDashboard {
                     const accuracy = position.coords.accuracy || 9999;
                     const fix = { lat, lng, accuracy };
 
+                    fixes.push(fix);
+                    if (fixes.length > 20) fixes.shift();
+
                     if (onProgress) onProgress(fix);
 
                     if (!best || accuracy < best.accuracy) best = fix;
@@ -552,7 +575,10 @@ class AdminDashboard {
                     lastGood = fix;
 
                     const moved = !previous || this.calculateDistance(previous.lat, previous.lng, lat, lng) >= 2;
-                    if (moved && accuracy <= PRECISE_THRESHOLD && stableCount >= 1) {
+                    // Require: good accuracy, moved from the previous corner, AND the position has
+                    // shown natural GPS jitter (spread) — proves this is a real fix, not a frozen
+                    // coarse/snapped location.
+                    if (moved && accuracy <= PRECISE_THRESHOLD && stableCount >= 1 && spread() >= JITTER_MIN) {
                         finish(fix);
                     }
                 },
@@ -571,6 +597,35 @@ class AdminDashboard {
 
     async handleLocationError(error) {
         this.updateAutoLocationStatus('Location capture failed', 'inactive');
+
+        if (error?.code === 3 && error?.reason === 'static_position') {
+            const ios = this.isIOS();
+            this.showLocationMessage('', 'error', {
+                html:
+                    `<strong>Your device is returning a frozen position</strong><br>` +
+                    `The GPS coordinates are not changing, which means your browser is using a ` +
+                    `coarse/approximate location instead of real GPS. This is almost always ` +
+                    (ios
+                        ? `because <b>Precise Location is off for Safari</b>.<br><br>` +
+                          `<b>To fix it:</b><br>` +
+                          `1. Open the iPhone Settings app<br>` +
+                          `2. Privacy &amp; Security → Location Services → Safari Websites<br>` +
+                          `3. Turn on <b>Precise Location</b><br>` +
+                          `4. Come back and reload this page<br><br>` +
+                          `Or use “Pick points on map” to click the corners yourself.`
+                        : `because GPS isn't getting a real fix.<br><br>` +
+                          `<b>Try:</b><br>` +
+                          `• Move outside or near a window (GPS needs sky)<br>` +
+                          `• In Chrome: click the padlock → Site settings → Location → set to Precise<br>` +
+                          `• Or use “Pick points on map” to click the corners yourself.<br><br>`) +
+                    `<button type="button" class="btn btn-primary btn-sm" data-location-retry style="margin-top:10px">Try again</button> ` +
+                    `<button type="button" class="btn btn-ghost btn-sm" data-location-openmap style="margin-top:10px">Use map instead</button>`,
+                retry: true
+            });
+            document.querySelector('[data-location-openmap]')
+                ?.addEventListener('click', () => this.openMapPicker());
+            return;
+        }
 
         if (error?.code === 3 && error?.reason === 'no_precise_fix') {
             const reported = error.accuracy && error.accuracy < 9999
