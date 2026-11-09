@@ -421,26 +421,35 @@ class AdminDashboard {
             this.toast('Location needs an https:// connection.', 'error', 'Location');
             return;
         }
+        if (!confirm(
+            'This will add a point at YOUR CURRENT physical location.\n\n' +
+            'Only use this if you are standing at the corner of the workplace right now.\n\n' +
+            'To place a point somewhere else, cancel and click the map instead.'
+        )) return;
+
         const last = this.polygonPoints[this.polygonPoints.length - 1];
         this.showLocationMessage('Getting a precise GPS fix… stay still for a moment.', 'info');
         this.updateAutoLocationStatus('Getting a precise fix…', 'active');
         this.capturePrecisePosition(last, (live) => {
-            this.currentLocation = { latitude: live.lat, longitude: live.lng, accuracy: live.accuracy };
-            this.updateCoordinatesDisplay();
-            this.updateAccuracyDisplay();
+            // Only update the status text here — never commit this.currentLocation from a
+            // progress event, or a rough early fix can be shown as the captured position.
             this.updateAutoLocationStatus(`Getting a precise fix… ±${Math.round(live.accuracy)} m`, 'active');
         }).then((fix) => {
             this.currentLocation = { latitude: fix.lat, longitude: fix.lng, accuracy: fix.accuracy };
             this.updateAccuracyDisplay();
             const accuracy = Number(fix.accuracy);
-            // A coarse fix can be hundreds of metres (or a whole town) out. Refuse to save a
-            // wrong corner instead of quietly recording a coordinate that is not where you are.
-            if (Number.isFinite(accuracy) && accuracy > 100) {
-                this.updateAutoLocationStatus('GPS fix too rough', 'inactive');
+            // A fix with accuracy worse than ~30 m is usually Wi-Fi/network, not GPS, and can be
+            // hundreds of metres out. Refuse to save a wrong corner.
+            if (Number.isFinite(accuracy) && accuracy > 30) {
+                this.updateAutoLocationStatus(`Rough fix (±${Math.round(accuracy)} m)`, 'inactive');
                 this.showLocationMessage(
-                    `Your device is only locating you to about ±${Math.round(accuracy)} m, so this corner would be wrong. ` +
-                    'Stand still in the open with Precise Location on, or use “Pick points on map” to click the corner yourself.',
-                    'error'
+                    `Your device is only locating you to ±${Math.round(accuracy)} m — likely Wi-Fi or approximate location.\n\n` +
+                    `To fix this:\n` +
+                    `• In Chrome: click the padlock → Site settings → Location → set to "Precise"\n` +
+                    `• Move outside for better GPS signal\n` +
+                    `• Or click on the map to place the point manually`,
+                    'error',
+                    { retry: true }
                 );
                 return;
             }
@@ -454,56 +463,102 @@ class AdminDashboard {
             if (last && this.calculateDistance(last.lat, last.lng, fix.lat, fix.lng) > 5000) {
                 this.updateAutoLocationStatus('Fix looks wrong', 'inactive');
                 this.showLocationMessage(
-                    'That position is more than 5 km from your last corner, which usually means the device is using an approximate (network) location. ' +
-                    'Move into the open with GPS and Precise Location on, or use “Pick points on map”.',
+                    'That position is more than 5 km from your last corner — likely an approximate fix.\n' +
+                    'Move into the open with GPS on, or use the map to place the point.',
                     'error'
                 );
                 return;
             }
             if (this.addPolygonPoint(fix.lat, fix.lng)) {
                 this.updateAutoLocationStatus('Point added', 'active');
-                this.showLocationMessage(`Point ${this.polygonPoints.length} added from your current position.`, 'success');
+                this.showLocationMessage(
+                    `Point ${this.polygonPoints.length} added from your current position (±${Math.round(accuracy)} m).`,
+                    'success'
+                );
             }
         }).catch((error) => this.handleLocationError(error));
     }
 
     // iOS Safari returns a cached, unchanging position from repeated getCurrentPosition()
-    // calls; watchPosition() streams fresh fixes. So we watch and resolve with the first
-    // accurate fix that actually moved from the previous point (or the best fix on timeout).
+    // calls; watchPosition() streams fresh fixes. We resolve with the first precise fix that
+    // actually moved from the previous point and held steady, and otherwise only fall back to
+    // the best fix if it is still reasonably accurate. A low "accuracy" number does not mean
+    // the position is right: Wi-Fi fixes often report 30–60 m while being hundreds of metres out.
     capturePrecisePosition(previous, onProgress) {
         return new Promise((resolve, reject) => {
+            if (!navigator.geolocation) {
+                return reject({ code: 2, reason: 'unsupported' });
+            }
+
             const options = { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 };
-            const settleAfter = previous ? 9000 : 4000;
+            const settleAfter = previous ? 12000 : 7000;
+            const hardTimeout = 25000;
+            const PRECISE_THRESHOLD = 25;
+            const FALLBACK_THRESHOLD = 50;
+
             let watchId = null;
             let settleTimer = null;
             let hardTimer = null;
             let best = null;
+            let stableCount = 0;
+            let lastGood = null;
             let settled = false;
+
             const cleanup = () => {
                 if (watchId !== null) navigator.geolocation.clearWatch(watchId);
                 watchId = null;
                 clearTimeout(settleTimer);
                 clearTimeout(hardTimer);
             };
+
             const finish = (result, isError) => {
                 if (settled) return;
                 settled = true;
                 cleanup();
                 if (isError) reject(result); else resolve(result);
             };
-            const giveBest = () => (best ? finish(best) : finish({ code: 3 }, true));
+
+            const giveBest = () => {
+                if (best && best.accuracy <= FALLBACK_THRESHOLD) {
+                    finish(best);
+                } else {
+                    finish(
+                        { code: 3, reason: 'no_precise_fix', accuracy: best?.accuracy ?? 9999 },
+                        true
+                    );
+                }
+            };
+
             settleTimer = setTimeout(giveBest, settleAfter);
-            hardTimer = setTimeout(giveBest, 20000);
-            watchId = navigator.geolocation.watchPosition((position) => {
-                const lat = position.coords.latitude;
-                const lng = position.coords.longitude;
-                const accuracy = position.coords.accuracy || 9999;
-                const fix = { lat, lng, accuracy };
-                if (onProgress) onProgress(fix);
-                if (!best || accuracy < best.accuracy) best = fix;
-                const moved = !previous || this.calculateDistance(previous.lat, previous.lng, lat, lng) >= 2;
-                if (moved && accuracy <= 65) finish(fix);
-            }, (error) => finish(error, true), options);
+            hardTimer = setTimeout(giveBest, hardTimeout);
+
+            watchId = navigator.geolocation.watchPosition(
+                (position) => {
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+                    const accuracy = position.coords.accuracy || 9999;
+                    const fix = { lat, lng, accuracy };
+
+                    if (onProgress) onProgress(fix);
+
+                    if (!best || accuracy < best.accuracy) best = fix;
+
+                    // Stability check: two consecutive similar fixes
+                    if (lastGood && this.calculateDistance(lastGood.lat, lastGood.lng, lat, lng) < 3) {
+                        stableCount++;
+                    } else {
+                        stableCount = 0;
+                    }
+                    lastGood = fix;
+
+                    const moved = !previous || this.calculateDistance(previous.lat, previous.lng, lat, lng) >= 2;
+                    if (moved && accuracy <= PRECISE_THRESHOLD && stableCount >= 1) {
+                        finish(fix);
+                    }
+                },
+                (error) => finish(error, true),
+                options
+            );
         });
     }
 
@@ -516,6 +571,28 @@ class AdminDashboard {
 
     async handleLocationError(error) {
         this.updateAutoLocationStatus('Location capture failed', 'inactive');
+
+        if (error?.code === 3 && error?.reason === 'no_precise_fix') {
+            const reported = error.accuracy && error.accuracy < 9999
+                ? Math.round(error.accuracy)
+                : 'unknown';
+            this.showLocationMessage('', 'error', {
+                html:
+                    `<strong>Could not get a precise GPS fix</strong><br>` +
+                    `Your device is only locating you to ±${reported} m.<br><br>` +
+                    `Common causes:<br>` +
+                    `• <b>Precise Location is off</b> — in Chrome: click the padlock → Site settings → Location → set to Precise<br>` +
+                    `• <b>You are indoors</b> — GPS works poorly through concrete; move near a window or outside<br>` +
+                    `• <b>No GPS hardware</b> (laptop/desktop) — use "Pick points on map" instead<br><br>` +
+                    `<button type="button" class="btn btn-primary btn-sm" data-location-retry style="margin-top:10px">Try again</button> ` +
+                    `<button type="button" class="btn btn-ghost btn-sm" data-location-openmap style="margin-top:10px">Use map instead</button>`,
+                retry: true
+            });
+            document.querySelector('[data-location-openmap]')
+                ?.addEventListener('click', () => this.openMapPicker());
+            return;
+        }
+
         const help = await this.describeLocationProblem(error);
         const primary = help.denied
             ? '<button type="button" class="btn btn-primary btn-sm" data-location-reload style="margin-top:10px">I changed it — reload</button>' +
