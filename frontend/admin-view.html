@@ -1121,7 +1121,7 @@
                     <div class="card-body">
                         <div class="location-setup-section">
                             <h4>Workspace polygon</h4>
-                            <p class="field-hint" style="margin:0 0 14px">Stand at each corner of the workspace and add a point. Add at least 4 points to close the geofence polygon. Points are ordered as you add them.</p>
+                            <p class="field-hint" style="margin:0 0 14px">Tap “Start Walk”, walk to each corner of the workspace and tap “Lock Corner”. Add at least 4 points to close the geofence polygon. Points are ordered as you lock them.</p>
                             <div class="auto-detect-section">
                                 <strong>Status</strong>
                                 <div>
@@ -1130,12 +1130,14 @@
                                 </div>
                             </div>
                             <div class="location-buttons">
-                                <button type="button" class="btn btn-success" id="startAutoLocationBtn">Add point at my location</button>
+                                <button type="button" class="btn btn-success" id="startWalkBtn">Start Walk</button>
+                                <button type="button" class="btn btn-success" id="lockCornerBtn" disabled>Lock Corner</button>
+                                <button type="button" class="btn btn-primary" id="finishWalkBtn" disabled>Finish</button>
                                 <button type="button" class="btn btn-info" id="openMapPickerBtn">Pick points on map</button>
                                 <button type="button" class="btn btn-ghost" id="undoPolygonBtn">Undo last point</button>
                                 <button type="button" class="btn btn-danger" id="clearPolygonBtn">Clear polygon</button>
                             </div>
-                            <p class="polygon-hint">“Add point at my location” needs a device with GPS (a phone or tablet). On a laptop or desktop, use “Pick points on map” and click each corner of the workspace.</p>
+                            <p class="polygon-hint">“Start Walk” streams your live position onto the map — walk to each corner and tap “Lock Corner”, then “Finish”. Needs a device with location (phone/tablet). Indoors the fix is coarse, so check the orange accuracy circle before locking; on a laptop use “Pick points on map”.</p>
                             <div id="locationMessage" class="location-message"></div>
                             <div id="mapContainer" class="map-container">
                                 <div class="map-search" id="mapSearch">
@@ -1411,7 +1413,7 @@
     </div>
 
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-    <script src="admin-dashboard.js?v=20261109a"></script>
+    <script src="admin-dashboard.js?v=20261110a"></script>
 </body>
 
 </html>
