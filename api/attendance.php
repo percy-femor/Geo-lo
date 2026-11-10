@@ -51,8 +51,12 @@ try {
         $stmt->execute([$workerId]);
         $locations = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        // Small grace zone so minor GPS jitter at the boundary does not block a valid punch.
-        $accuracyGrace = $accuracy !== null ? min((float)$accuracy, 10) : 0;
+        // Accuracy-aware tolerance: a fix is only as trustworthy as its reported accuracy.
+        // Outdoors that is a few metres; indoors (Wi-Fi/cell triangulation) it can be tens of
+        // metres, so the effective boundary is expanded by the reported accuracy (capped) instead
+        // of a flat 10m. Kept in step with the client so the server never rejects a position the
+        // app accepted. (Fixes worse than 100m are already rejected by gpsSanityCheck above.)
+        $accuracyGrace = $accuracy !== null ? min((float)$accuracy, 35.0) : 20.0;
         $withinGeofence = false;
         $validLocation = null;
         $nearestDistance = null;

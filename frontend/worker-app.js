@@ -9,6 +9,14 @@ class WorkerApp {
         this.currentAccuracy = null;
         this.locationInitTimeout = null;
         this.watchId = null;
+        // Debounce/hysteresis: a noisy fix should not flip the verdict every second.
+        // We only trust "inside" after it holds for a moment, and only drop to "outside"
+        // after it has stayed outside for longer, so iOS/Android stop flickering.
+        this.geofenceCommitted = false;
+        this.insideSince = null;
+        this.outsideSince = null;
+        this.lastGeofenceLabel = null;
+        this.lastGeofenceDistance = null;
         this.faceStream = null;
         this.pendingAction = null;
         this.init();
@@ -98,11 +106,13 @@ class WorkerApp {
             this.updateLocationMeta();
 
             // Accuracy is the reliable signal for whether this is a real GPS fix (a few metres)
-            // or a coarse Wi-Fi/approximate one (tens of metres or worse). We no longer wait for
-            // artificial coordinate "jitter", which a stable, accurate receiver does not produce
-            // and which was blocking check-in even when location was working correctly.
-            if (accuracy !== null && accuracy > 50) {
+            // or a coarse Wi-Fi/approximate one (tens of metres). Indoors the accuracy is naturally
+            // poor, so we no longer reject at 50m — we only wait when the fix is genuinely unusable.
+            // The 100m limit matches the server (gpsSanityCheck in work_rules.php) so the app never
+            // enables the button for a position the server will then reject.
+            if (accuracy !== null && accuracy > 100) {
                 this.isWithinGeofence = false;
+                this.resetGeofenceDebounce();
                 this.updateLocationStatus(false, `Waiting for a better GPS signal… (currently ±${Math.round(accuracy)}m)`);
                 this.updateButtonStates();
                 return;
@@ -153,16 +163,55 @@ class WorkerApp {
         meta.textContent = `GPS signal ${acc}${when ? ` · updated ${when}` : ''}`;
     }
 
+    resetGeofenceDebounce() {
+        this.geofenceCommitted = false;
+        this.insideSince = null;
+        this.outsideSince = null;
+    }
+
+    // Hysteresis: a point must stay inside for a short while before we trust it, and stay
+    // outside for longer before we drop the check-in window. This stops a single noisy fix
+    // (common indoors) from flickering the button on and off.
+    applyGeofenceHysteresis(rawInside) {
+        const now = Date.now();
+        const insideHold = 5000;
+        const outsideHold = 12000;
+        if (rawInside) {
+            this.outsideSince = null;
+            if (this.insideSince === null) this.insideSince = now;
+            if (this.geofenceCommitted || (now - this.insideSince) >= insideHold) {
+                this.geofenceCommitted = true;
+            }
+        } else {
+            this.insideSince = null;
+            if (this.outsideSince === null) this.outsideSince = now;
+            if (!this.geofenceCommitted || (now - this.outsideSince) >= outsideHold) {
+                this.geofenceCommitted = false;
+            }
+        }
+        this.isWithinGeofence = this.geofenceCommitted;
+        return this.isWithinGeofence;
+    }
+
     checkGeofence() {
         if (!this.currentLocation || this.workplaceLocations.length === 0) {
             this.isWithinGeofence = false;
+            this.resetGeofenceDebounce();
             this.updateLocationStatus(false, 'Waiting for location or no active workplaces');
             return;
         }
-        // Small grace zone so minor GPS jitter at the boundary does not block a valid punch.
-        // Keep this in step with the server (attendance.php uses min(accuracy, 10)) so the
-        // check-in button is never enabled for a position the server will then reject.
-        const grace = Math.min(Number(this.currentAccuracy || 0), 10);
+        // Accuracy-aware tolerance: a fix is only as trustworthy as its reported accuracy.
+        // Outdoors that is a few metres; indoors (Wi-Fi/cell triangulation) it can be tens of
+        // metres, so the effective boundary is expanded by the reported accuracy rather than a
+        // flat small value. Keep this in step with the server (attendance.php) so the button is
+        // never enabled for a position the server will then reject.
+        const reported = this.currentAccuracy !== null && Number.isFinite(Number(this.currentAccuracy))
+            ? Number(this.currentAccuracy)
+            : null;
+        const grace = reported !== null ? Math.min(reported, 35) : 20;
+        let rawInside = false;
+        let matchedName = null;
+        let matchedDistance = null;
         let nearest = { distance: Infinity, location: null };
         let misconfigured = false;
         for (const location of this.workplaceLocations) {
@@ -178,9 +227,10 @@ class WorkerApp {
                 const edge = this.distanceToPolygon(this.currentLocation.latitude, this.currentLocation.longitude, polygon);
                 if (edge !== null && edge < nearest.distance) nearest = { distance: edge, location };
                 if (inside || (edge !== null && edge <= grace)) {
-                    this.isWithinGeofence = true;
-                    this.updateLocationStatus(true, `At ${location.name}`, edge ?? 0);
-                    return;
+                    rawInside = true;
+                    matchedName = location.name;
+                    matchedDistance = inside ? 0 : edge;
+                    break;
                 }
                 continue;
             }
@@ -194,12 +244,31 @@ class WorkerApp {
             if (distance < nearest.distance) nearest = { distance, location };
             const effectiveRadius = Number(location.radius_meters || 100) + grace;
             if (distance <= effectiveRadius) {
-                this.isWithinGeofence = true;
-                this.updateLocationStatus(true, `At ${location.name}`, distance);
-                return;
+                rawInside = true;
+                matchedName = location.name;
+                matchedDistance = distance;
+                break;
             }
         }
-        this.isWithinGeofence = false;
+
+        const effectiveInside = this.applyGeofenceHysteresis(rawInside);
+
+        if (effectiveInside) {
+            if (rawInside) {
+                this.lastGeofenceLabel = matchedName;
+                this.lastGeofenceDistance = matchedDistance;
+                this.updateLocationStatus(true, `At ${matchedName}`, matchedDistance);
+            } else {
+                // Inside the debounce window: keep the verdict stable instead of flickering out.
+                const label = this.lastGeofenceLabel || 'work area';
+                this.updateLocationStatus(true, `Holding check-in — briefly outside ${label}…`, this.lastGeofenceDistance);
+            }
+            return;
+        }
+        if (rawInside) {
+            this.updateLocationStatus(false, 'Almost there — hold still for a moment…');
+            return;
+        }
         if (misconfigured && !nearest.location) {
             this.updateLocationStatus(false, 'A work area geofence is not set up correctly. Please contact your admin.');
             return;
