@@ -45,14 +45,15 @@
             }
         });
         async function login(btn){
+            const organization=document.getElementById('loginOrg').value.trim();
             const email=document.getElementById('loginEmail').value.trim();
             const pin=document.getElementById('loginPin').value.trim();
             const msg=document.getElementById('msg');
-            if(!email||!pin){msg.textContent='Enter email and PIN';msg.className='message error';return}
+            if(!organization||!email||!pin){msg.textContent='Enter organization, email and PIN';msg.className='message error';return}
             if(btn)GeoSession.setButtonLoading(btn,true);
             try{
                 const fingerprint=await GeoSession.fingerprint();
-                const res=await fetch(GeoSession.apiUrl('auth.php'),{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({email,pin,device_fingerprint:fingerprint})});
+                const res=await fetch(GeoSession.apiUrl('auth.php'),{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({organization,email,pin,device_fingerprint:fingerprint})});
                 const j=await res.json();
                 if(!res.ok||j.error){msg.textContent=j.error||'Invalid credentials';msg.className='message error';if(btn)GeoSession.setButtonLoading(btn,false);return}
                 GeoSession.set(j.token,'worker',j.user||j);
@@ -69,6 +70,7 @@
         </div>
         <div class="content">
             <div id="msg" class="message"></div>
+            <input type="text" class="input" id="loginOrg" placeholder="Organization" autocomplete="organization" />
             <input type="email" class="input" id="loginEmail" placeholder="Email" />
             <div class="input-with-icon">
                 <input type="password" class="input" id="loginPin" placeholder="PIN" />

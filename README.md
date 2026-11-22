@@ -8,7 +8,7 @@ Geo-Lo is multi-tenant. The **Geo-Lo owner** (super admin) hooks organizations o
 
 - Super admin console for onboarding organizations and their admins
 - Organization admin console for workers, locations, shifts, and payroll
-- Worker PIN login with device binding
+- Worker login with organization name, email and PIN, plus device binding
 - Geofenced check-in and check-out (both refused outside the work area), with a per-shift cut-off that closes check-in once the day's period has ended, plus GPS accuracy and travel checks
 - Server-side face capture on check-in (when enrolled or required)
 - Shifts with lateness, absence, overtime, and grace periods

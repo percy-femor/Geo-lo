@@ -35,9 +35,11 @@ try {
             $dup = $db->prepare("SELECT id FROM workers WHERE organization_id = ? AND employee_id = ? LIMIT 1");
             $dup->execute([$oid, $data['employee_id']]);
             if ($dup->fetch()) sendResponse(["error" => "Employee ID already exists in this organization"], 409);
-            $emailDup = $db->prepare("SELECT id FROM workers WHERE email = ? LIMIT 1");
-            $emailDup->execute([$data['email']]);
-            if ($emailDup->fetch()) sendResponse(["error" => "This email is already used by a worker"], 409);
+            // Email is unique per organization, not platform-wide, so another company
+            // may legitimately register the same address for its own worker.
+            $emailDup = $db->prepare("SELECT id FROM workers WHERE organization_id = ? AND email = ? LIMIT 1");
+            $emailDup->execute([$oid, $data['email']]);
+            if ($emailDup->fetch()) sendResponse(["error" => "This email is already used by a worker in this organization"], 409);
             $shiftId = $data['shift_id'] ?? null;
             if ($shiftId) assertOrgRow($db, 'shifts', $shiftId, $oid, 'Shift');
             $stmt = $db->prepare("INSERT INTO workers (employee_id, name, email, phone, pin_hash, password_hash, shift_id, require_face, organization_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");

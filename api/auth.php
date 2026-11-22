@@ -89,20 +89,29 @@ try {
         }
 
         if (empty($data['email']) || empty($data['pin'])) {
-            sendResponse(["error" => "Email and PIN required"], 400);
+            sendResponse(["error" => "Organization, email and PIN required"], 400);
         }
-        $stmt = $db->prepare("SELECT id, employee_id, name, email, pin_hash, device_fingerprint, device_bound, organization_id FROM workers WHERE email = ? AND COALESCE(is_active, 1) = 1");
-        $stmt->execute([$data['email']]);
+        $orgInput = trim((string)($data['organization'] ?? ''));
+        if ($orgInput === '') {
+            sendResponse(["error" => "Enter your organization name"], 400);
+        }
+        // The organization is part of the worker's credentials and is resolved first:
+        // worker emails are unique per organization rather than globally, so the typed
+        // name decides which account is being signed into on a shared device.
+        $orgStmt = $db->prepare("SELECT id, is_active FROM organizations WHERE LOWER(name) = LOWER(?) OR LOWER(slug) = LOWER(?) LIMIT 1");
+        $orgStmt->execute([$orgInput, $orgInput]);
+        $org = $orgStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$org) {
+            sendResponse(["error" => "No organization matches that name"], 401);
+        }
+        if ((int)$org['is_active'] !== 1) {
+            sendResponse(["error" => "This organization is suspended. Contact your admin."], 403);
+        }
+        $stmt = $db->prepare("SELECT id, employee_id, name, email, pin_hash, device_fingerprint, device_bound, organization_id FROM workers WHERE email = ? AND organization_id = ? AND COALESCE(is_active, 1) = 1 LIMIT 1");
+        $stmt->execute([$data['email'], $org['id']]);
         $worker = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$worker || empty($worker['pin_hash']) || !password_verify($data['pin'], $worker['pin_hash'])) {
             sendResponse(["error" => "Invalid credentials"], 401);
-        }
-        if (!empty($worker['organization_id'])) {
-            $orgActive = $db->prepare("SELECT is_active FROM organizations WHERE id = ?");
-            $orgActive->execute([$worker['organization_id']]);
-            if ((int)$orgActive->fetchColumn() !== 1) {
-                sendResponse(["error" => "This organization is suspended. Contact your admin."], 403);
-            }
         }
         if ((int)$worker['device_bound'] === 1 && !empty($worker['device_fingerprint']) && $fingerprint && $worker['device_fingerprint'] !== $fingerprint) {
             sendResponse(["error" => "This account is bound to another device. Ask an admin to reset it."], 403);

@@ -19,7 +19,7 @@ function loadDotEnv($path) {
 }
 loadDotEnv(dirname(__DIR__) . DIRECTORY_SEPARATOR . '.env');
 
-const GEOLO_SCHEMA_VERSION = 2026112001;
+const GEOLO_SCHEMA_VERSION = 2026112301;
 
 function envFlagEnabled($name) {
     $value = strtolower(trim((string)(getenv($name) ?: '')));
@@ -354,6 +354,26 @@ function columnExists($db, $table, $column) {
 
 function ensureColumn($db, $table, $ddl) {
     try { $db->exec("ALTER TABLE `$table` ADD COLUMN $ddl"); } catch (Exception $e) {}
+}
+
+function indexExists($db, $table, $index) {
+    if (!tableExists($db, $table)) return false;
+    $stmt = $db->prepare("SHOW INDEX FROM `$table` WHERE Key_name = ?");
+    $stmt->execute([$index]);
+    return (bool)$stmt->fetch();
+}
+
+// Add an index/key by name, skipping it when it is already there. Errors are
+// swallowed the same way ensureColumn does: the schema version is stamped either
+// way, and bumping that version is the retry mechanism.
+function ensureIndex($db, $table, $index, $ddl) {
+    if (indexExists($db, $table, $index)) return;
+    try { $db->exec("ALTER TABLE `$table` ADD $ddl"); } catch (Exception $e) {}
+}
+
+function dropIndexIfExists($db, $table, $index) {
+    if (!indexExists($db, $table, $index)) return;
+    try { $db->exec("ALTER TABLE `$table` DROP INDEX `$index`"); } catch (Exception $e) {}
 }
 
 function ensureGeoLoSchema($db) {
@@ -697,6 +717,46 @@ function ensureGeoLoSchema($db) {
             if ($defaultShift && columnExists($db, 'workers', 'shift_id')) {
                 $db->exec("UPDATE workers SET shift_id = $defaultShift WHERE organization_id = $oid AND shift_id IS NULL");
             }
+        }
+    }
+
+    // --- Multi-tenant organization layout ---------------------------------------
+    // Every tenant table carries organization_id, and uniqueness is scoped to one
+    // organization so two organizations can each have their own "EMP-001" or the
+    // same worker email. Without this the tables are only nominally multi-tenant:
+    // a global UNIQUE on workers.employee_id stops a second organization registering
+    // the same short ID at all.
+
+    // Attendance gains a denormalized organization_id (taken from its worker) so
+    // reports and exports can filter by organization without always joining workers.
+    if (tableExists($db, 'attendance')) {
+        if (!columnExists($db, 'attendance', 'organization_id')) {
+            ensureColumn($db, 'attendance', "organization_id INT NULL");
+        }
+        if (columnExists($db, 'attendance', 'organization_id')) {
+            try {
+                $db->exec("UPDATE attendance a JOIN workers w ON w.id = a.worker_id
+                    SET a.organization_id = w.organization_id
+                    WHERE a.organization_id IS NULL");
+            } catch (Exception $e) {}
+        }
+    }
+
+    // Replace the legacy global worker rules with per-organization ones.
+    if (tableExists($db, 'workers')) {
+        dropIndexIfExists($db, 'workers', 'employee_id'); // legacy global UNIQUE
+        ensureIndex($db, 'workers', 'uniq_org_employee', 'UNIQUE KEY uniq_org_employee (organization_id, employee_id)');
+        ensureIndex($db, 'workers', 'uniq_org_email', 'UNIQUE KEY uniq_org_email (organization_id, email)');
+        ensureIndex($db, 'workers', 'idx_workers_org', 'KEY idx_workers_org (organization_id)');
+    }
+
+    // A slug is how an organization is looked up by name, so it must be unique.
+    ensureIndex($db, 'organizations', 'uniq_org_slug', 'UNIQUE KEY uniq_org_slug (slug)');
+
+    // Scoping indexes so per-organization queries do not full-scan.
+    foreach (['locations', 'shifts', 'alerts', 'audit_log', 'attendance'] as $tenantTable) {
+        if (tableExists($db, $tenantTable) && columnExists($db, $tenantTable, 'organization_id')) {
+            ensureIndex($db, $tenantTable, 'idx_' . $tenantTable . '_org', "KEY idx_{$tenantTable}_org (organization_id)");
         }
     }
 

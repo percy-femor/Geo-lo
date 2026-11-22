@@ -25,7 +25,7 @@ try {
         }
 
         $fingerprint = $data['device_fingerprint'] ?? null;
-        $stmt = $db->prepare("SELECT id, name, device_bound, device_fingerprint, require_face FROM workers WHERE id = ? AND COALESCE(is_active, 1) = 1");
+        $stmt = $db->prepare("SELECT id, name, device_bound, device_fingerprint, require_face, organization_id FROM workers WHERE id = ? AND COALESCE(is_active, 1) = 1");
         $stmt->execute([$workerId]);
         $worker = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$worker) sendResponse(["error" => "Worker not found"], 401);
@@ -145,9 +145,10 @@ try {
             }
 
             $status = classifyAttendanceStatus($shift, date('Y-m-d H:i:s'));
-            $stmt = $db->prepare("INSERT INTO attendance (worker_id, location_id, check_in, check_in_lat, check_in_lng, status, accuracy_meters, device_fingerprint) VALUES (?, ?, NOW(), ?, ?, ?, ?, ?)");
+            $stmt = $db->prepare("INSERT INTO attendance (worker_id, organization_id, location_id, check_in, check_in_lat, check_in_lng, status, accuracy_meters, device_fingerprint) VALUES (?, ?, ?, NOW(), ?, ?, ?, ?, ?)");
             $stmt->execute([
                 $workerId,
+                $worker['organization_id'] ?: null,
                 $validLocation['id'],
                 $data['latitude'],
                 $data['longitude'],

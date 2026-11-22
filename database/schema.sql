@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS organizations (
     plan_name VARCHAR(60) NULL,
     onboarding_request_id INT NULL,
     is_active TINYINT(1) DEFAULT 1,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_org_slug (slug)
 );
 
 -- Companies that came through the "Get Started" form on the marketing site.
@@ -53,7 +54,12 @@ CREATE TABLE workers (
     device_bound TINYINT(1) DEFAULT 0,
     require_face TINYINT(1) DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    is_active BOOLEAN DEFAULT TRUE
+    is_active BOOLEAN DEFAULT TRUE,
+    -- Email and employee ID are unique per organization, so two companies can each
+    -- have their own "EMP-001" or reuse the same worker address.
+    UNIQUE KEY uniq_org_employee (organization_id, employee_id),
+    UNIQUE KEY uniq_org_email (organization_id, email),
+    KEY idx_workers_org (organization_id)
 );
 
 -- Workplace locations table
@@ -67,13 +73,17 @@ CREATE TABLE locations (
     polygon TEXT NULL,
     is_active BOOLEAN DEFAULT TRUE,
     is_default BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_locations_org (organization_id)
 );
 
 -- Attendance records table
 CREATE TABLE attendance (
     id INT AUTO_INCREMENT PRIMARY KEY,
     worker_id INT NOT NULL,
+    -- Copied from the worker so attendance can be scoped to one organization
+    -- without always joining workers.
+    organization_id INT NULL,
     location_id INT NOT NULL,
     check_in DATETIME NOT NULL,
     check_out DATETIME,
@@ -91,6 +101,7 @@ CREATE TABLE attendance (
     accuracy_meters INT NULL,
     device_fingerprint VARCHAR(128) NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_attendance_org (organization_id),
     FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE,
     FOREIGN KEY (location_id) REFERENCES locations(id)
 );
@@ -159,7 +170,8 @@ CREATE TABLE IF NOT EXISTS shifts (
     overtime_after_minutes INT DEFAULT 0,
     break_minutes INT DEFAULT 0,
     is_active TINYINT(1) DEFAULT 1,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_shifts_org (organization_id)
 );
 
 CREATE TABLE IF NOT EXISTS audit_log (
@@ -171,7 +183,8 @@ CREATE TABLE IF NOT EXISTS audit_log (
     entity VARCHAR(50) NOT NULL,
     entity_id INT NULL,
     details TEXT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_audit_log_org (organization_id)
 );
 
 CREATE TABLE IF NOT EXISTS alerts (
@@ -182,7 +195,8 @@ CREATE TABLE IF NOT EXISTS alerts (
     organization_id INT NULL,
     message VARCHAR(255) NOT NULL,
     is_read TINYINT(1) DEFAULT 0,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_alerts_org (organization_id)
 );
 
 INSERT INTO shifts (name, start_time, end_time, work_days, late_grace_minutes, overtime_after_minutes, break_minutes)

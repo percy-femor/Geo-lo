@@ -20,10 +20,17 @@ function findResetAccount($db, $email) {
     $email = trim((string)$email);
     if ($email === '') return null;
 
-    $stmt = $db->prepare("SELECT id, name, email FROM workers WHERE LOWER(email) = LOWER(?) AND COALESCE(is_active, 1) = 1 LIMIT 1");
+    // Worker emails are unique per organization, so one address can belong to workers
+    // in different organizations. A bare email no longer identifies a single account,
+    // so refuse rather than guess and reset the wrong person.
+    $stmt = $db->prepare("SELECT id, name, email FROM workers WHERE LOWER(email) = LOWER(?) AND COALESCE(is_active, 1) = 1 LIMIT 2");
     $stmt->execute([$email]);
-    $worker = $stmt->fetch(PDO::FETCH_ASSOC);
-    if ($worker) {
+    $workers = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    if (count($workers) > 1) {
+        return ['ambiguous' => true, 'type' => 'worker'];
+    }
+    if ($workers) {
+        $worker = $workers[0];
         return [
             'type' => 'worker',
             'id' => (int)$worker['id'],
@@ -90,6 +97,9 @@ try {
         if (!$account) {
             sendResponse(["error" => "We could not find an account with that email."], 404);
         }
+        if (!empty($account['ambiguous'])) {
+            sendResponse(["error" => "That email belongs to workers in more than one organization. Ask your admin to reset it."], 409);
+        }
 
         // Only the newest code should work, so retire any earlier one.
         $db->prepare("UPDATE password_reset_codes SET used = 1 WHERE account_type = ? AND account_id = ? AND used = 0")
@@ -122,6 +132,9 @@ try {
         $account = findResetAccount($db, $email);
         if (!$account) {
             sendResponse(["error" => "We could not find an account with that email."], 404);
+        }
+        if (!empty($account['ambiguous'])) {
+            sendResponse(["error" => "That email belongs to workers in more than one organization. Ask your admin to reset it."], 409);
         }
 
         $minLength = $account['type'] === 'admin' ? 8 : 6;
