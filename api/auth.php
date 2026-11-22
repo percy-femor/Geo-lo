@@ -53,7 +53,7 @@ try {
             if ($stmt->fetch()) {
                 sendResponse(["error" => "This is a worker account. Use the worker login."], 403);
             }
-            $stmt = $db->prepare("SELECT a.id, a.name, a.email, a.password_hash, a.privilege, a.organization_id, o.name AS organization_name, o.is_active AS organization_active
+            $stmt = $db->prepare("SELECT a.id, a.name, a.email, a.password_hash, a.privilege, a.organization_id, a.must_change_password, o.name AS organization_name, o.is_active AS organization_active
                 FROM admins a LEFT JOIN organizations o ON o.id = a.organization_id
                 WHERE LOWER(a.email) = LOWER(?) AND COALESCE(a.is_active, 1) = 1");
             $stmt->execute([$data['email']]);
@@ -139,17 +139,25 @@ try {
         }
         $current = $data['current_password'] ?? '';
         $next = $data['new_password'] ?? '';
-        if (!$current || !$next || strlen($next) < 6) {
-            sendResponse(["error" => "Current password and a new password (6+ characters) are required"], 400);
+        if (!$next || strlen($next) < 8) {
+            sendResponse(["error" => "A new password of at least 8 characters is required"], 400);
         }
         if ($session['role'] === 'admin') {
-            $stmt = $db->prepare("SELECT password_hash FROM admins WHERE id = ?");
+            $stmt = $db->prepare("SELECT password_hash, must_change_password FROM admins WHERE id = ?");
             $stmt->execute([$session['user_id']]);
             $row = $stmt->fetch(PDO::FETCH_ASSOC);
-            if (!$row || !password_verify($current, $row['password_hash'])) {
-                sendResponse(["error" => "Current password is incorrect"], 401);
+            if (!$row) {
+                sendResponse(["error" => "Admin not found"], 401);
             }
-            $db->prepare("UPDATE admins SET password_hash = ? WHERE id = ?")->execute([password_hash($next, PASSWORD_DEFAULT), $session['user_id']]);
+            // An account still carrying an issued/default password may set its own
+            // without re-typing it; everyone else must confirm the current one.
+            if (empty($row['must_change_password'])) {
+                if (!$current || !password_verify($current, $row['password_hash'])) {
+                    sendResponse(["error" => "Current password is incorrect"], 401);
+                }
+            }
+            $db->prepare("UPDATE admins SET password_hash = ?, must_change_password = 0, password_changed_at = NOW() WHERE id = ?")
+                ->execute([password_hash($next, PASSWORD_DEFAULT), $session['user_id']]);
             sendResponse(["message" => "Password updated"]);
         }
         sendResponse(["error" => "Workers should use PIN reset"], 400);

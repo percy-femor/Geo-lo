@@ -16,9 +16,13 @@ RUN chmod +x /usr/local/bin/start-geolo.sh \
 WORKDIR /var/www/html
 COPY api ./api
 COPY frontend ./frontend
+COPY website ./website
 COPY database ./database
 
-RUN chown -R www-data:www-data /var/www/html
+# .sessions keeps the owner console login working when the PHP temp dir is not
+# writable by the web server user (see website/owner.php).
+RUN mkdir -p /var/www/html/website/.sessions \
+    && chown -R www-data:www-data /var/www/html
 
 EXPOSE 80
 CMD ["start-geolo.sh"]

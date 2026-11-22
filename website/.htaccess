@@ -1,0 +1,14 @@
+DirectoryIndex index.html
+
+# The owner console shell is only ever served through owner.php.
+<IfModule mod_authz_core.c>
+    <FilesMatch "^owner-view\.html$">
+        Require all denied
+    </FilesMatch>
+</IfModule>
+<IfModule !mod_authz_core.c>
+    <FilesMatch "^owner-view\.html$">
+        Order allow,deny
+        Deny from all
+    </FilesMatch>
+</IfModule>

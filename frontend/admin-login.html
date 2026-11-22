@@ -34,7 +34,7 @@
     <div class="container">
         <div class="header">
             <h1>Organization admin</h1>
-            <p>Track your company’s workers. Geo-Lo owners use a different login.</p>
+            <p>Track your company’s workers.</p>
         </div>
         <div class="content">
             <div id="msg" class="message"></div>
@@ -45,8 +45,7 @@
                 <button type="button" class="toggle-btn" id="togglePass">👁️</button>
             </div>
             <button class="btn" id="loginBtn" type="button">Sign in</button>
-            <div class="link"><a href="super-login.html">Geo-Lo owner login</a></div>
-            <div class="link"><a href="login.html">Worker login</a></div>
+            <div class="link"><a href="../website/reset.html" id="forgotLink">Forgot password?</a></div>
         </div>
     </div>
     <script src="session.js?v=20261107a"></script>
@@ -55,6 +54,7 @@
             const theme = localStorage.getItem('geo_theme') || 'light';
             if (theme === 'light') document.body.classList.add('light');
             else document.body.classList.remove('light');
+            document.getElementById('forgotLink')?.setAttribute('href', GeoSession.siteUrl('reset.html'));
             if (new URLSearchParams(location.search).get('denied')) {
                 const msg = document.getElementById('msg');
                 msg.textContent = 'This console is for organization admins. Worker accounts and the Geo-Lo owner use different logins.';
@@ -112,7 +112,7 @@
                         return;
                     }
                     GeoSession.set(j.token, 'admin', user);
-                    window.location.replace('admin.php');
+                    window.location.replace(user.must_change_password ? 'set-password.html' : 'admin.php');
                 } catch (e) {
                     msg.textContent = 'Network error';
                     msg.className = 'message error';

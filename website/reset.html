@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reset Password</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root{--bg:#eafaf1;--surface:#ffffff;--muted:#5c7d6e;--text:#10251b;--primary:#16a34a;--primary-press:#15803d;--border:1px solid rgba(22,163,74,0.16);--shadow:0 16px 36px rgba(16,80,50,0.1);--radius:20px}
+        body{font-family:'Poppins',sans-serif;background:radial-gradient(1100px 560px at 8% -10%,#bbf7d0 0%,transparent 50%),radial-gradient(900px 480px at 100% 0%,#a7f3d0 0%,transparent 42%),var(--bg);min-height:100vh;display:flex;align-items:center;justify-content:center;color:var(--text);margin:0;padding:24px}
+        .card{width:100%;max-width:520px;background:var(--surface);border:var(--border);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+        .header{padding:24px;background:linear-gradient(135deg,var(--primary),#34d399);color:#fff;text-align:center}
+        .header h2{font-weight:700}
+        .header p{opacity:.9;font-size:14px;margin-top:4px}
+        .content{padding:24px}
+        .step{display:none}
+        .step.active{display:block}
+        .group{margin-bottom:16px}
+        .group label{display:block;margin-bottom:8px;font-weight:600}
+        .group input{width:100%;padding:12px;border:2px solid rgba(22,163,74,.18);border-radius:12px;font-size:15px;background:rgba(22,163,74,.05);color:var(--text)}
+        .group input:focus{border-color:var(--primary);outline:none;box-shadow:0 0 0 4px rgba(16,163,74,.15)}
+        .group input.code{letter-spacing:8px;text-align:center;font-size:20px;font-weight:700}
+        .btn{width:100%;padding:12px;border:none;border-radius:12px;font-weight:600;cursor:pointer;background:var(--primary);color:#fff}
+        .btn.ghost{background:transparent;color:var(--primary);border:2px solid rgba(22,163,74,.3)}
+        .btn.ghost:hover{background:rgba(22,163,74,.08)}
+        .message{margin-top:12px;padding:12px;border-radius:12px;text-align:center;display:none}
+        .message.success{background:#dcfce7;color:#166534;border:1px solid #bbf7d0}
+        .message.error{background:#fee2e2;color:#991b1b;border:1px solid #fecaca}
+        .link{display:block;text-align:center;margin-top:16px;color:var(--primary);font-weight:600;text-decoration:none}
+        .input-with-icon{position:relative}
+        .input-with-icon input{padding-right:44px}
+        .toggle-btn{position:absolute;right:8px;top:50%;transform:translateY(-50%);background:transparent;border:none;cursor:pointer;font-size:1rem;color:var(--muted);padding:6px}
+        .hint{font-size:12px;color:var(--muted);margin-top:-6px;margin-bottom:12px}
+        .steps{display:flex;gap:6px;justify-content:center;margin-bottom:18px}
+        .steps span{width:26px;height:4px;border-radius:4px;background:rgba(22,163,74,.2)}
+        .steps span.on{background:var(--primary)}
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="header">
+            <h2>Reset Password</h2>
+            <p>We email a 6-digit code, then you choose a new password</p>
+        </div>
+        <div class="content">
+            <div class="steps" id="steps">
+                <span class="on"></span><span></span><span></span>
+            </div>
+
+            <div class="step active" id="stepEmail">
+                <div class="group">
+                    <label>Email</label>
+                    <input type="email" id="email" placeholder="Enter your account email" autocomplete="username">
+                </div>
+                <button class="btn" id="sendCodeBtn" type="button">Email me a code</button>
+            </div>
+
+            <div class="step" id="stepCode">
+                <div class="group">
+                    <label>6-digit code</label>
+                    <input type="text" class="code" id="code" maxlength="6" inputmode="numeric" placeholder="000000" autocomplete="one-time-code">
+                </div>
+                <p class="hint" id="codeHint"></p>
+                <div class="group">
+                    <label>New password</label>
+                    <div class="input-with-icon">
+                        <input type="password" id="newPassword" placeholder="New password" autocomplete="new-password">
+                        <button type="button" class="toggle-btn" data-toggle="newPassword">👁️</button>
+                    </div>
+                </div>
+                <div class="group">
+                    <label>Confirm new password</label>
+                    <div class="input-with-icon">
+                        <input type="password" id="confirmPassword" placeholder="Repeat new password" autocomplete="new-password">
+                        <button type="button" class="toggle-btn" data-toggle="confirmPassword">👁️</button>
+                    </div>
+                </div>
+                <button class="btn" id="confirmBtn" type="button">Set new password</button>
+                <button class="btn ghost" id="resendBtn" type="button" style="margin-top:10px">Use a different email / resend</button>
+            </div>
+
+            <div class="step" id="stepDone">
+                <div class="message success" style="display:block">Your password has been updated. You can sign in now.</div>
+                <a class="link" id="backLink" href="#">Back to sign in</a>
+            </div>
+
+            <div id="msg" class="message"></div>
+            <a href="#" class="link" id="backHome">Back to login</a>
+        </div>
+    </div>
+    <script>
+        // The shared client lib lives in the app folder; resolve it whether the
+        // site is served from /website/, / or the app from /app/.
+        (function () {
+            var base = /\/website\//.test(location.pathname)
+                ? location.pathname.replace(/\/website\/[^/]*$/, '/frontend/')
+                : '/app/';
+            document.write('<scr' + 'ipt src="' + base + 'session.js?v=20261107a"><\/scr' + 'ipt>');
+        })();
+    </script>
+    <script>
+        // Keep the user in the portal they came from (worker, organization admin or Geo-Lo owner).
+        (function () {
+            var ref = document.referrer;
+            var fromOwner = ref.indexOf('owner-login.html') !== -1;
+            var fromAdmin = ref.indexOf('admin-login.html') !== -1;
+            var label = fromOwner ? 'Back to owner login' : (fromAdmin ? 'Back to organization login' : 'Back to sign in');
+            var target = GeoSession.appUrl(fromOwner ? 'owner-login.html' : (fromAdmin ? 'admin-login.html' : 'login.html'));
+            var backHome = document.getElementById('backHome');
+            backHome.setAttribute('href', target);
+            backHome.textContent = label;
+            var backLink = document.getElementById('backLink');
+            backLink.setAttribute('href', target);
+            backLink.textContent = label;
+        })();
+
+        document.querySelectorAll('.toggle-btn').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var input = document.getElementById(btn.dataset.toggle);
+                if (!input) return;
+                var show = input.type === 'password';
+                input.type = show ? 'text' : 'password';
+                btn.textContent = show ? '🙈' : '👁️';
+            });
+        });
+
+        function showMsg(text, type) {
+            var m = document.getElementById('msg');
+            m.textContent = text;
+            m.className = 'message ' + (type || 'error');
+            m.style.display = text ? 'block' : 'none';
+        }
+        function goStep(index) {
+            ['stepEmail', 'stepCode', 'stepDone'].forEach(function (id, i) {
+                document.getElementById(id).classList.toggle('active', i === index);
+            });
+            document.querySelectorAll('#steps span').forEach(function (bar, i) {
+                bar.classList.toggle('on', i <= index);
+            });
+            document.getElementById('backHome').style.display = index === 2 ? 'none' : 'block';
+            showMsg('');
+        }
+
+        var endpoint = function () { return GeoSession.apiUrl('password_reset.php'); };
+
+        async function requestCode(btn) {
+            var email = document.getElementById('email').value.trim();
+            if (!email) { showMsg('Enter your email'); return; }
+            GeoSession.setButtonLoading(btn, true);
+            try {
+                var res = await fetch(endpoint(), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'request', email: email })
+                });
+                var j = await res.json();
+                if (!res.ok || j.error) {
+                    showMsg(j.error || 'Could not send the code');
+                    GeoSession.setButtonLoading(btn, false);
+                    return;
+                }
+                document.getElementById('codeHint').textContent = j.message || '';
+                goStep(1);
+                document.getElementById('code').focus();
+            } catch (e) {
+                showMsg('Network error');
+            }
+            GeoSession.setButtonLoading(btn, false);
+        }
+
+        async function confirmReset(btn) {
+            var email = document.getElementById('email').value.trim();
+            var code = document.getElementById('code').value.trim();
+            var next = document.getElementById('newPassword').value;
+            var confirm = document.getElementById('confirmPassword').value;
+            if (!code) { showMsg('Enter the 6-digit code'); return; }
+            if (next.length < 6) { showMsg('Use at least 6 characters'); return; }
+            if (next !== confirm) { showMsg('The two passwords do not match'); return; }
+            GeoSession.setButtonLoading(btn, true);
+            try {
+                var res = await fetch(endpoint(), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'confirm', email: email, code: code, new_password: next })
+                });
+                var j = await res.json();
+                if (!res.ok || j.error) {
+                    showMsg(j.error || 'Could not reset the password');
+                    GeoSession.setButtonLoading(btn, false);
+                    return;
+                }
+                goStep(2);
+            } catch (e) {
+                showMsg('Network error');
+            }
+            GeoSession.setButtonLoading(btn, false);
+        }
+
+        document.getElementById('sendCodeBtn').addEventListener('click', function () { requestCode(this); });
+        document.getElementById('confirmBtn').addEventListener('click', function () { confirmReset(this); });
+        document.getElementById('resendBtn').addEventListener('click', function () {
+            document.getElementById('newPassword').value = '';
+            document.getElementById('confirmPassword').value = '';
+            goStep(0);
+        });
+        document.getElementById('email').addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') requestCode(document.getElementById('sendCodeBtn'));
+        });
+        document.getElementById('confirmPassword').addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') confirmReset(document.getElementById('confirmBtn'));
+        });
+    </script>
+</body>
+</html>

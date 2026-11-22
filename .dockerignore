@@ -4,3 +4,5 @@ agent-transcripts
 *.md
 env.example
 render.yaml
+.env
+website/.sessions

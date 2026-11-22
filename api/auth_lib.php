@@ -95,12 +95,13 @@ function publicAdminUser($admin) {
         'email' => $admin['email'],
         'privilege' => $privilege,
         'organization_id' => !empty($admin['organization_id']) ? (int)$admin['organization_id'] : null,
-        'organization_name' => $admin['organization_name'] ?? null
+        'organization_name' => $admin['organization_name'] ?? null,
+        'must_change_password' => !empty($admin['must_change_password'])
     ];
 }
 
 function getAdminRecord($db, $userId) {
-    $sql = "SELECT a.id, a.name, a.email, a.privilege, a.is_active, a.organization_id,
+    $sql = "SELECT a.id, a.name, a.email, a.privilege, a.is_active, a.organization_id, a.must_change_password,
             o.name AS organization_name, o.is_active AS organization_active
         FROM admins a
         LEFT JOIN organizations o ON o.id = a.organization_id

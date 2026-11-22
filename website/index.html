@@ -1,0 +1,1221 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Geo-Lo | Trusted Geofenced Attendance</title>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@500;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        display: ['Outfit', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#ecfdf5',
+                            100: '#d1fae5',
+                            400: '#34d399',
+                            500: '#10b981',
+                            600: '#059669',
+                            900: '#064e3b',
+                            950: '#022c22',
+                        },
+                        surface: '#0f231a',
+                        base: '#071a13'
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- AOS (Animate on Scroll) -->
+    <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
+
+    <!-- Paystack Inline (payment gateway) -->
+    <script src="https://js.paystack.co/v2/inline.js"></script>
+    
+    <style>
+        /* Base styles & Backgrounds */
+        body {
+            background-color: #071a13;
+            color: #e6f2ec;
+            overflow-x: hidden;
+        }
+        
+        .bg-grid {
+            background-size: 40px 40px;
+            background-image: linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+                              linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+            mask-image: radial-gradient(circle at center, black, transparent 80%);
+            -webkit-mask-image: radial-gradient(circle at center, black, transparent 80%);
+        }
+
+        .glass {
+            background: rgba(15, 35, 26, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(147, 179, 165, 0.15);
+        }
+
+        .text-gradient {
+            background: linear-gradient(to right, #34d399, #10b981, #059669);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        /* Radar Animation */
+        .radar-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            overflow: hidden;
+        }
+        .radar-circle {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            border-radius: 50%;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+        .radar-sweep {
+            position: absolute;
+            top: 50%; left: 50%;
+            width: 100%; height: 100%;
+            transform-origin: top left;
+            background: conic-gradient(from 0deg, transparent 0deg, rgba(16, 185, 129, 0.15) 90deg, transparent 180deg);
+            animation: sweep 4s linear infinite;
+        }
+        @keyframes sweep {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .radar-dot {
+            position: absolute;
+            width: 6px; height: 6px;
+            background: #34d399;
+            border-radius: 50%;
+            box-shadow: 0 0 10px #34d399;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.5); opacity: 0.5; }
+        }
+
+        /* Abstract Polygon Background Animation */
+        .polygon-bg {
+            animation: float 6s ease-in-out infinite;
+        }
+        @keyframes float {
+            0%, 100% { transform: translateY(0px) rotate(0deg); }
+            50% { transform: translateY(-15px) rotate(2deg); }
+        }
+    </style>
+</head>
+<body class="font-sans antialiased selection:bg-brand-500 selection:text-white">
+
+    <!-- Navigation -->
+    <nav class="fixed w-full z-50 glass border-b border-white/5 transition-all duration-300" id="navbar">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-20">
+                <!-- Logo -->
+                <div class="flex-shrink-0 flex items-center gap-3 cursor-pointer">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center shadow-[0_0_20px_rgba(16,185,129,0.4)]">
+                        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    </div>
+                    <span class="font-display font-bold text-2xl tracking-tight">Geo-Lo</span>
+                </div>
+                
+                <!-- Desktop Nav -->
+                <div class="hidden md:flex items-center space-x-8">
+                    <a href="#features" class="text-sm font-medium text-gray-300 hover:text-white transition-colors">Features</a>
+                    <a href="#pricing" class="text-sm font-medium text-gray-300 hover:text-white transition-colors">Pricing</a>
+                    <a href="#how-it-works" class="text-sm font-medium text-gray-300 hover:text-white transition-colors">How it Works</a>
+                    <a href="#companies" class="text-sm font-medium text-gray-300 hover:text-white transition-colors">Clients</a>
+                    <a href="#security" class="text-sm font-medium text-gray-300 hover:text-white transition-colors">Security</a>
+                </div>
+
+                <!-- CTA -->
+                <div class="hidden md:flex items-center space-x-3">
+                    <div class="relative">
+                        <button type="button" id="login-menu-btn" class="px-5 py-2.5 rounded-full glass hover:bg-white/5 text-white text-sm font-semibold transition-all inline-flex items-center gap-2">
+                            Login
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                        </button>
+                        <div id="login-menu-panel" class="hidden absolute right-0 mt-3 w-64 rounded-2xl glass border border-white/10 shadow-2xl p-2">
+                            <a data-app-link="admin-login.html" href="#" class="block px-4 py-3 rounded-xl hover:bg-white/5 transition-colors">
+                                <span class="block text-sm font-semibold text-white">Organization admin</span>
+                                <span class="block text-xs text-gray-400">Workers, shifts and payroll</span>
+                            </a>
+                            <a data-app-link="login.html" href="#" class="block px-4 py-3 rounded-xl hover:bg-white/5 transition-colors">
+                                <span class="block text-sm font-semibold text-white">Worker</span>
+                                <span class="block text-xs text-gray-400">Check in and out with GPS</span>
+                            </a>
+                        </div>
+                    </div>
+                    <button type="button" data-get-started class="px-5 py-2.5 rounded-full bg-brand-500 hover:bg-brand-400 text-brand-950 text-sm font-semibold transition-all shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:shadow-[0_0_30px_rgba(16,185,129,0.5)]">Get Started</button>
+                </div>
+
+                <!-- Mobile Menu Button -->
+                <div class="md:hidden flex items-center">
+                    <button id="mobile-menu-btn" class="text-gray-300 hover:text-white focus:outline-none">
+                        <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Mobile Menu -->
+        <div id="mobile-menu" class="hidden md:hidden glass border-t border-white/5 absolute w-full">
+            <div class="px-4 pt-2 pb-6 space-y-2">
+                <a href="#features" class="block px-3 py-2 text-base font-medium text-gray-300 hover:text-white">Features</a>
+                <a href="#pricing" class="block px-3 py-2 text-base font-medium text-gray-300 hover:text-white">Pricing</a>
+                <a href="#how-it-works" class="block px-3 py-2 text-base font-medium text-gray-300 hover:text-white">How it Works</a>
+                <a href="#companies" class="block px-3 py-2 text-base font-medium text-gray-300 hover:text-white">Clients</a>
+                <a href="#security" class="block px-3 py-2 text-base font-medium text-gray-300 hover:text-white">Security</a>
+                <div class="mt-4 pt-4 border-t border-white/10 flex flex-col gap-3">
+                    <p class="px-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Login</p>
+                    <a data-app-link="admin-login.html" href="#" class="block px-3 py-2 text-base font-medium text-gray-300 hover:text-white">Organization admin</a>
+                    <a data-app-link="login.html" href="#" class="block px-3 py-2 text-base font-medium text-gray-300 hover:text-white">Worker</a>
+                    <button type="button" data-get-started class="block w-full text-center px-4 py-2 text-sm font-semibold text-brand-950 bg-brand-400 hover:bg-brand-500 rounded-lg transition-colors">Get Started</button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="relative min-h-screen flex items-center justify-center pt-20 overflow-hidden">
+        <!-- Background Elements -->
+        <div class="absolute inset-0 bg-grid pointer-events-none"></div>
+        <div class="absolute top-1/4 left-1/2 -translate-x-1/2 w-[800px] h-[800px] bg-brand-500/20 rounded-full blur-[120px] pointer-events-none"></div>
+
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 w-full">
+            <div class="grid lg:grid-cols-2 gap-12 items-center">
+                
+                <!-- Hero Text -->
+                <div data-aos="fade-right" data-aos-duration="1000">
+                    <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full glass border-brand-500/30 mb-6">
+                        <span class="w-2 h-2 rounded-full bg-brand-400 animate-pulse"></span>
+                        <span class="text-xs font-medium text-brand-100">Geo-Lo v2.0 is live</span>
+                    </div>
+                    <h1 class="font-display text-5xl md:text-6xl lg:text-7xl font-bold leading-tight mb-6 tracking-tight">
+                        Trusted punches. <br>
+                        <span class="text-gradient">Zero guesswork.</span>
+                    </h1>
+                    <p class="text-lg md:text-xl text-gray-400 mb-8 max-w-lg leading-relaxed">
+                        A multi-tenant, geofence-based attendance platform that validates every check-in against GPS polygons, facial verification, and device fingerprinting.
+                    </p>
+                    <div class="flex flex-col sm:flex-row gap-4">
+                        <button type="button" data-get-started class="inline-flex justify-center items-center px-8 py-4 rounded-full bg-brand-500 hover:bg-brand-400 text-brand-950 font-semibold transition-all shadow-[0_0_30px_rgba(16,185,129,0.3)] hover:shadow-[0_0_40px_rgba(16,185,129,0.5)] transform hover:-translate-y-1">
+                            Get Started
+                            <svg class="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path></svg>
+                        </button>
+                        <a href="#features" class="inline-flex justify-center items-center px-8 py-4 rounded-full glass hover:bg-white/5 transition-all text-white font-medium">
+                            Explore Features
+                        </a>
+                    </div>
+                    
+                    <!-- Stats -->
+                    <div class="mt-12 flex items-center gap-8 border-t border-white/10 pt-6">
+                        <div>
+                            <p class="text-3xl font-display font-bold">8k+</p>
+                            <p class="text-sm text-gray-400">Lines of robust code</p>
+                        </div>
+                        <div>
+                            <p class="text-3xl font-display font-bold">99.9%</p>
+                            <p class="text-sm text-gray-400">Validation accuracy</p>
+                        </div>
+                        <div>
+                            <p class="text-3xl font-display font-bold">0</p>
+                            <p class="text-sm text-gray-400">Client trust required</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Hero Visual (Live Dashboard Mockup) -->
+                <div data-aos="fade-left" data-aos-duration="1000" data-aos-delay="200" class="relative">
+                    <!-- Floating Polygon -->
+                    <svg class="absolute -top-10 -right-10 w-32 h-32 text-brand-500/20 polygon-bg" viewBox="0 0 100 100" fill="currentColor">
+                        <polygon points="50 0, 100 25, 100 75, 50 100, 0 75, 0 25" />
+                    </svg>
+
+                    <div class="glass rounded-2xl p-6 relative z-10 border-brand-500/20 shadow-2xl shadow-black/50">
+                        <!-- Mockup Header -->
+                        <div class="flex justify-between items-center mb-6 pb-4 border-b border-white/10">
+                            <div>
+                                <h3 class="font-display font-bold text-lg">Who's at work</h3>
+                                <p class="text-xs text-gray-400">Live occupancy & exceptions</p>
+                            </div>
+                            <div class="flex gap-2">
+                                <span class="w-3 h-3 rounded-full bg-red-500/50"></span>
+                                <span class="w-3 h-3 rounded-full bg-yellow-500/50"></span>
+                                <span class="w-3 h-3 rounded-full bg-green-500/50"></span>
+                            </div>
+                        </div>
+                        
+                        <!-- Mockup Content -->
+                        <div class="grid grid-cols-2 gap-4 mb-4">
+                            <div class="bg-white/5 rounded-xl p-4 border border-white/5">
+                                <p class="text-xs text-gray-400 mb-1">On site</p>
+                                <div class="flex items-center gap-3">
+                                    <span class="text-2xl font-bold text-brand-400">24</span>
+                                    <div class="radar-container w-8 h-8">
+                                        <div class="radar-sweep"></div>
+                                        <div class="radar-circle w-6 h-6"></div>
+                                        <div class="radar-dot top-3 left-3"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="bg-white/5 rounded-xl p-4 border border-white/5">
+                                <p class="text-xs text-gray-400 mb-1">Late today</p>
+                                <div class="flex items-center gap-3">
+                                    <span class="text-2xl font-bold text-yellow-400">3</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- List Items -->
+                        <div class="space-y-3">
+                            <div class="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/5">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-8 h-8 rounded-full bg-brand-500/20 flex items-center justify-center text-brand-400 font-bold text-xs">JD</div>
+                                    <div>
+                                        <p class="text-sm font-medium">John Doe</p>
+                                        <p class="text-xs text-gray-500">Main Office • 08:00 AM</p>
+                                    </div>
+                                </div>
+                                <span class="px-2 py-1 rounded text-xs font-medium bg-green-500/10 text-green-400 border border-green-500/20">Present</span>
+                            </div>
+                            <div class="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/5">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-8 h-8 rounded-full bg-yellow-500/20 flex items-center justify-center text-yellow-400 font-bold text-xs">AS</div>
+                                    <div>
+                                        <p class="text-sm font-medium">Alice Smith</p>
+                                        <p class="text-xs text-gray-500">Warehouse • 08:15 AM</p>
+                                    </div>
+                                </div>
+                                <span class="px-2 py-1 rounded text-xs font-medium bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">Late</span>
+                            </div>
+                            <div class="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/5 opacity-50">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-8 h-8 rounded-full bg-gray-500/20 flex items-center justify-center text-gray-400 font-bold text-xs">MK</div>
+                                    <div>
+                                        <p class="text-sm font-medium">Mike K.</p>
+                                        <p class="text-xs text-gray-500">Not arrived</p>
+                                    </div>
+                                </div>
+                                <span class="px-2 py-1 rounded text-xs font-medium bg-gray-500/10 text-gray-400 border border-gray-500/20">Absent</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Decorative glow -->
+                    <div class="absolute -inset-1 bg-gradient-to-r from-brand-400 to-brand-600 rounded-2xl blur opacity-20 group-hover:opacity-30 transition duration-1000 -z-10"></div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Trusted Companies Section -->
+    <section id="companies" class="py-12 border-y border-white/5 bg-surface/50 relative z-10">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <p class="text-center text-sm font-medium text-gray-500 mb-8 uppercase tracking-widest" data-aos="fade-up">Organizations hooked onto Geo-Lo</p>
+            <div class="flex flex-wrap justify-center items-center gap-8 md:gap-16 transition-all duration-500" data-aos="fade-up" data-aos-delay="100">
+                <!-- Organization logos -->
+                <div class="flex items-center gap-2 text-xl font-bold font-display"><img src="pic/mofa%20srid.jfif" alt="MoFA SRID" class="w-8 h-8 rounded-md object-cover"> MoFA SRID</div>
+                <div class="flex items-center gap-2 text-xl font-bold font-display"><svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg> DOROLANDFOUNDATION</div>
+                <div class="flex items-center gap-2 text-xl font-bold font-display"><svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/></svg> GlobalTech</div>
+                <div class="flex items-center gap-2 text-xl font-bold font-display"><svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5"/></svg> Vertex Inc</div>
+                <div class="flex items-center gap-2 text-xl font-bold font-display"><svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L2 22h20L12 2z"/></svg> Horizon</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features" class="py-24 relative">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+            <div class="text-center max-w-3xl mx-auto mb-16" data-aos="fade-up">
+                <h2 class="text-brand-400 font-semibold tracking-wide uppercase text-sm mb-2">Capabilities</h2>
+                <h3 class="font-display text-4xl md:text-5xl font-bold mb-6">Everything you need to <br>trust the clock.</h3>
+                <p class="text-lg text-gray-400">The client is never trusted. Every punch is validated server-side against the worker's GPS, a defined workplace boundary, and their device.</p>
+            </div>
+
+            <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                
+                <!-- Feature 1 -->
+                <div class="glass p-8 rounded-2xl hover:bg-white/5 transition-colors border-white/5 group" data-aos="fade-up" data-aos-delay="0">
+                    <div class="w-12 h-12 rounded-xl bg-brand-500/10 flex items-center justify-center mb-6 border border-brand-500/20 group-hover:scale-110 transition-transform">
+                        <svg class="w-6 h-6 text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path></svg>
+                    </div>
+                    <h4 class="text-xl font-bold mb-3">Polygon Geofencing</h4>
+                    <p class="text-gray-400 text-sm leading-relaxed">Not just a radius. Define exact work areas using complex polygons on satellite imagery. Server-side ray-casting ensures workers are exactly inside the boundary.</p>
+                </div>
+
+                <!-- Feature 2 -->
+                <div class="glass p-8 rounded-2xl hover:bg-white/5 transition-colors border-white/5 group" data-aos="fade-up" data-aos-delay="100">
+                    <div class="w-12 h-12 rounded-xl bg-brand-500/10 flex items-center justify-center mb-6 border border-brand-500/20 group-hover:scale-110 transition-transform">
+                        <svg class="w-6 h-6 text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    </div>
+                    <h4 class="text-xl font-bold mb-3">Server-Side Face Check</h4>
+                    <p class="text-gray-400 text-sm leading-relaxed">Client-side spoofing is blocked. We downscale and hash the photo on the server, comparing it to the enrolled template. Raw images are never persisted.</p>
+                </div>
+
+                <!-- Feature 3 -->
+                <div class="glass p-8 rounded-2xl hover:bg-white/5 transition-colors border-white/5 group" data-aos="fade-up" data-aos-delay="200">
+                    <div class="w-12 h-12 rounded-xl bg-brand-500/10 flex items-center justify-center mb-6 border border-brand-500/20 group-hover:scale-110 transition-transform">
+                        <svg class="w-6 h-6 text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+                    </div>
+                    <h4 class="text-xl font-bold mb-3">Device Binding</h4>
+                    <p class="text-gray-400 text-sm leading-relaxed">Tie a worker to a specific phone. A SHA-256 device fingerprint is captured on login. If a different phone tries to use the account, check-in is blocked.</p>
+                </div>
+
+                <!-- Feature 4 -->
+                <div class="glass p-8 rounded-2xl hover:bg-white/5 transition-colors border-white/5 group" data-aos="fade-up" data-aos-delay="0">
+                    <div class="w-12 h-12 rounded-xl bg-brand-500/10 flex items-center justify-center mb-6 border border-brand-500/20 group-hover:scale-110 transition-transform">
+                        <svg class="w-6 h-6 text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                    </div>
+                    <h4 class="text-xl font-bold mb-3">GPS Sanity Check</h4>
+                    <p class="text-gray-400 text-sm leading-relaxed">Impossible travel? We calculate the speed between punches. If it's over 180 km/h, the check-in is blocked and an anomaly alert is triggered.</p>
+                </div>
+
+                <!-- Feature 5 -->
+                <div class="glass p-8 rounded-2xl hover:bg-white/5 transition-colors border-white/5 group" data-aos="fade-up" data-aos-delay="100">
+                    <div class="w-12 h-12 rounded-xl bg-brand-500/10 flex items-center justify-center mb-6 border border-brand-500/20 group-hover:scale-110 transition-transform">
+                        <svg class="w-6 h-6 text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                    </div>
+                    <h4 class="text-xl font-bold mb-3">Payroll Ready</h4>
+                    <p class="text-gray-400 text-sm leading-relaxed">Export daily, monthly, or custom date ranges to CSV or Excel. Overtime, breaks, and missed checkouts are automatically calculated.</p>
+                </div>
+
+                <!-- Feature 6 -->
+                <div class="glass p-8 rounded-2xl hover:bg-white/5 transition-colors border-white/5 group" data-aos="fade-up" data-aos-delay="200">
+                    <div class="w-12 h-12 rounded-xl bg-brand-500/10 flex items-center justify-center mb-6 border border-brand-500/20 group-hover:scale-110 transition-transform">
+                        <svg class="w-6 h-6 text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
+                    </div>
+                    <h4 class="text-xl font-bold mb-3">Multi-Tenant Architecture</h4>
+                    <p class="text-gray-400 text-sm leading-relaxed">One backend, three consoles. Geo-Lo owners manage organizations, Org Admins manage workers, and Workers track their time.</p>
+                </div>
+
+            </div>
+        </div>
+    </section>
+
+    <!-- Pricing / Billing Section -->
+    <section id="pricing" class="py-24 relative">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+            <div class="text-center max-w-3xl mx-auto mb-16" data-aos="fade-up">
+                <h2 class="text-brand-400 font-semibold tracking-wide uppercase text-sm mb-2">Billing</h2>
+                <h3 class="font-display text-4xl md:text-5xl font-bold mb-6">Simple plans that <br>scale with you.</h3>
+                <p class="text-lg text-gray-400">Start free, upgrade when your team grows. Billed monthly in GHS — cancel anytime.</p>
+            </div>
+            <div id="pricing-grid" class="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl mx-auto"></div>
+        </div>
+    </section>
+
+    <!-- How it Works Section -->
+    <section id="how-it-works" class="py-24 relative overflow-hidden">
+        <div class="absolute top-0 left-0 w-full h-full bg-gradient-to-b from-transparent via-brand-950/20 to-transparent pointer-events-none"></div>
+        
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+            <div class="text-center max-w-3xl mx-auto mb-16" data-aos="fade-up">
+                <h2 class="text-brand-400 font-semibold tracking-wide uppercase text-sm mb-2">How it works</h2>
+                <h3 class="font-display text-4xl md:text-5xl font-bold mb-6">The worker check-in flow</h3>
+                <p class="text-lg text-gray-400">From the moment they arrive, the client is validated securely against the server.</p>
+            </div>
+
+            <div class="grid md:grid-cols-4 gap-8">
+                <!-- Step 1 -->
+                <div class="relative" data-aos="fade-up" data-aos-delay="0">
+                    <div class="flex items-center justify-center w-12 h-12 rounded-full bg-brand-500 text-brand-950 font-bold text-lg mb-6 shadow-[0_0_20px_rgba(16,185,129,0.4)]">1</div>
+                    <h4 class="text-lg font-bold mb-2">Authenticate</h4>
+                    <p class="text-sm text-gray-400">Worker signs in with their email and secure PIN. A token is issued and device fingerprint captured.</p>
+                    <!-- Connector Line (Desktop) -->
+                    <div class="hidden md:block absolute top-6 left-1/2 w-full h-[2px] bg-gradient-to-r from-brand-500/50 to-transparent -z-10"></div>
+                </div>
+                <!-- Step 2 -->
+                <div class="relative" data-aos="fade-up" data-aos-delay="100">
+                    <div class="flex items-center justify-center w-12 h-12 rounded-full bg-brand-500/20 text-brand-400 font-bold text-lg mb-6 border border-brand-500/30">2</div>
+                    <h4 class="text-lg font-bold mb-2">Capture GPS</h4>
+                    <p class="text-sm text-gray-400">Browser captures a high-accuracy location fix and takes a photo for face verification.</p>
+                    <div class="hidden md:block absolute top-6 left-1/2 w-full h-[2px] bg-gradient-to-r from-brand-500/50 to-transparent -z-10"></div>
+                </div>
+                <!-- Step 3 -->
+                <div class="relative" data-aos="fade-up" data-aos-delay="200">
+                    <div class="flex items-center justify-center w-12 h-12 rounded-full bg-brand-500/20 text-brand-400 font-bold text-lg mb-6 border border-brand-500/30">3</div>
+                    <h4 class="text-lg font-bold mb-2">Validate</h4>
+                    <p class="text-sm text-gray-400">Server checks device binding, GPS sanity, face hash, and runs the point-in-polygon test.</p>
+                    <div class="hidden md:block absolute top-6 left-1/2 w-full h-[2px] bg-gradient-to-r from-brand-500/50 to-transparent -z-10"></div>
+                </div>
+                <!-- Step 4 -->
+                <div class="relative" data-aos="fade-up" data-aos-delay="300">
+                    <div class="flex items-center justify-center w-12 h-12 rounded-full bg-green-500 text-white font-bold text-lg mb-6 shadow-[0_0_20px_rgba(34,197,94,0.4)]">✓</div>
+                    <h4 class="text-lg font-bold mb-2">Record</h4>
+                    <p class="text-sm text-gray-400">If all checks pass, the attendance is logged. If not, it's blocked and audited.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Security Section -->
+    <section id="security" class="py-24 relative">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="glass rounded-3xl p-8 md:p-16 relative overflow-hidden border-brand-500/20" data-aos="zoom-in">
+                <!-- Background decoration -->
+                <div class="absolute top-0 right-0 w-64 h-64 bg-brand-500/10 rounded-full blur-[80px]"></div>
+                
+                <div class="grid md:grid-cols-2 gap-12 items-center relative z-10">
+                    <div>
+                        <h2 class="text-brand-400 font-semibold tracking-wide uppercase text-sm mb-2">Trust & Safety</h2>
+                        <h3 class="font-display text-3xl md:text-4xl font-bold mb-6">Built on the principle of <br>zero trust.</h3>
+                        <p class="text-gray-400 mb-8 leading-relaxed">
+                            We don't rely on the client to tell the truth. Every operational row carries an <code class="bg-white/10 px-1 py-0.5 rounded text-brand-300">organization_id</code>, preventing cross-tenant data leaks. Passwords use bcrypt, while session tokens are hashed with SHA-256.
+                        </p>
+                        
+                        <ul class="space-y-4">
+                            <li class="flex items-start gap-3">
+                                <svg class="w-5 h-5 text-brand-400 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                                <span class="text-sm text-gray-300">Multi-tenant isolation by default</span>
+                            </li>
+                            <li class="flex items-start gap-3">
+                                <svg class="w-5 h-5 text-brand-400 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                                <span class="text-sm text-gray-300">Prepared SQL statements everywhere</span>
+                            </li>
+                            <li class="flex items-start gap-3">
+                                <svg class="w-5 h-5 text-brand-400 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                                <span class="text-sm text-gray-300">Full immutable audit logging</span>
+                            </li>
+                            <li class="flex items-start gap-3">
+                                <svg class="w-5 h-5 text-brand-400 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                                <span class="text-sm text-gray-300">Role-based access control (RBAC)</span>
+                            </li>
+                        </ul>
+                    </div>
+
+                    <!-- Abstract Security Visual -->
+                    <div class="flex justify-center">
+                        <div class="relative w-64 h-64 md:w-80 md:h-80">
+                            <div class="absolute inset-0 border-2 border-brand-500/20 rounded-full animate-[spin_10s_linear_infinite]"></div>
+                            <div class="absolute inset-4 border-2 border-brand-500/40 rounded-full border-dashed animate-[spin_15s_linear_infinite_reverse]"></div>
+                            <div class="absolute inset-8 border-2 border-brand-500/60 rounded-full animate-[spin_20s_linear_infinite]"></div>
+                            <div class="absolute inset-0 flex items-center justify-center">
+                                <div class="w-24 h-24 bg-brand-500 rounded-2xl flex items-center justify-center shadow-[0_0_40px_rgba(16,185,129,0.6)] rotate-45">
+                                    <svg class="w-12 h-12 text-brand-950 -rotate-45" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA Section -->
+    <section class="py-24 relative overflow-hidden">
+        <div class="absolute inset-0 bg-brand-500/5"></div>
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-center" data-aos="fade-up">
+            <h2 class="font-display text-4xl md:text-5xl font-bold mb-6">Ready to secure your attendance?</h2>
+            <p class="text-lg text-gray-400 mb-10">Join the organizations that trust Geo-Lo for accurate, fraud-free check-ins.</p>
+            <div class="flex flex-col sm:flex-row justify-center gap-4">
+                <button type="button" data-get-started class="inline-flex justify-center items-center px-8 py-4 rounded-full bg-brand-500 hover:bg-brand-400 text-brand-950 font-semibold transition-all shadow-[0_0_30px_rgba(16,185,129,0.3)]">
+                    Get Started
+                </button>
+                <a href="mailto:hello@geo-lo.com" class="inline-flex justify-center items-center px-8 py-4 rounded-full glass hover:bg-white/5 transition-all text-white font-medium">
+                    Contact Sales
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="border-t border-white/10 bg-surface/30 pt-16 pb-8">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-10 mb-14">
+                <!-- Brand -->
+                <div class="col-span-2">
+                    <div class="flex items-center gap-3 mb-5">
+                        <div class="w-9 h-9 rounded-lg bg-brand-500 flex items-center justify-center">
+                            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path></svg>
+                        </div>
+                        <span class="font-display font-bold text-xl tracking-tight">Geo-Lo</span>
+                    </div>
+                    <p class="text-sm text-gray-400 max-w-xs leading-relaxed mb-6">
+                        Trusted, fraud-free attendance powered by polygon geofencing, device binding, and server-side verification.
+                    </p>
+                    <div class="flex gap-3">
+                        <a href="mailto:hello@geo-lo.com" aria-label="Email" class="w-9 h-9 rounded-lg bg-white/5 hover:bg-brand-500/20 border border-white/10 flex items-center justify-center text-gray-400 hover:text-brand-400 transition-colors">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+                        </a>
+                        <a href="#" aria-label="LinkedIn" class="w-9 h-9 rounded-lg bg-white/5 hover:bg-brand-500/20 border border-white/10 flex items-center justify-center text-gray-400 hover:text-brand-400 transition-colors">
+                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M4.98 3.5a2.5 2.5 0 100 5 2.5 2.5 0 000-5zM3 9h4v12H3V9zm6 0h3.8v1.7h.05c.53-.95 1.83-1.95 3.77-1.95 4.03 0 4.78 2.5 4.78 5.75V21h-4v-5.6c0-1.33-.03-3.05-1.9-3.05-1.9 0-2.2 1.45-2.2 2.95V21H9V9z"/></svg>
+                        </a>
+                        <a href="#" aria-label="X" class="w-9 h-9 rounded-lg bg-white/5 hover:bg-brand-500/20 border border-white/10 flex items-center justify-center text-gray-400 hover:text-brand-400 transition-colors">
+                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M18.24 2.25h3.31l-7.23 8.26L23 21.75h-6.66l-5.22-6.82-5.97 6.82H1.83l7.73-8.84L1 2.25h6.83l4.71 6.23 5.7-6.23zm-1.16 17.52h1.83L7.01 4.13H5.05l12.03 15.64z"/></svg>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Product -->
+                <div>
+                    <h4 class="font-display font-semibold text-sm uppercase tracking-wider text-white mb-5">Product</h4>
+                    <ul class="space-y-3 text-sm">
+                        <li><a href="#features" class="text-gray-400 hover:text-white transition-colors">Features</a></li>
+                        <li><a href="#pricing" class="text-gray-400 hover:text-white transition-colors">Pricing</a></li>
+                        <li><a href="#how-it-works" class="text-gray-400 hover:text-white transition-colors">How it Works</a></li>
+                        <li><a href="#security" class="text-gray-400 hover:text-white transition-colors">Security</a></li>
+                        <li><a href="#companies" class="text-gray-400 hover:text-white transition-colors">Clients</a></li>
+                    </ul>
+                </div>
+
+                <!-- Company -->
+                <div>
+                    <h4 class="font-display font-semibold text-sm uppercase tracking-wider text-white mb-5">Company</h4>
+                    <ul class="space-y-3 text-sm">
+                        <li><a href="#" class="text-gray-400 hover:text-white transition-colors">About</a></li>
+                        <li><a href="#" class="text-gray-400 hover:text-white transition-colors">Careers</a></li>
+                        <li><a href="mailto:hello@geo-lo.com" class="text-gray-400 hover:text-white transition-colors">Contact Sales</a></li>
+                    </ul>
+                </div>
+
+                <!-- Get Started -->
+                <div>
+                    <h4 class="font-display font-semibold text-sm uppercase tracking-wider text-white mb-5">Get Started</h4>
+                    <ul class="space-y-3 text-sm">
+                        <li><button type="button" data-get-started class="text-left text-gray-400 hover:text-white transition-colors">Onboard your organization</button></li>
+                        <li><a href="mailto:hello@geo-lo.com" class="text-gray-400 hover:text-white transition-colors">hello@geo-lo.com</a></li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="pt-8 border-t border-white/10 flex flex-col md:flex-row justify-between items-center gap-4">
+                <p class="text-sm text-gray-500">© 2026 Geo-Lo Attendance Systems. All rights reserved.</p>
+                <div class="flex gap-6">
+                    <a href="#" class="text-sm text-gray-400 hover:text-white transition-colors">Privacy Policy</a>
+                    <a href="#" class="text-sm text-gray-400 hover:text-white transition-colors">Terms of Service</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Onboarding Modal -->
+    <div id="onboard-modal" class="fixed inset-0 z-[100] hidden items-center justify-center p-4 sm:p-6">
+        <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" data-modal-close></div>
+        <div class="relative w-full max-w-lg max-h-[90vh] overflow-y-auto glass rounded-2xl border-brand-500/20 shadow-2xl shadow-black/60 p-6 sm:p-8">
+            <button type="button" data-modal-close aria-label="Close" class="absolute top-4 right-4 w-9 h-9 rounded-full bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white flex items-center justify-center transition-colors">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+
+            <!-- Form view -->
+            <div id="onboard-form-wrap">
+                <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-500/10 border border-brand-500/20 mb-4">
+                    <span class="w-2 h-2 rounded-full bg-brand-400 animate-pulse"></span>
+                    <span class="text-xs font-medium text-brand-100">Onboarding</span>
+                </div>
+                <h3 class="font-display text-2xl font-bold mb-2">Onboard your organization</h3>
+                <p class="text-sm text-gray-400 mb-6">Tell us about your organization and we'll hook you up onto the system. Our team will reach out shortly.</p>
+
+                <form id="onboard-form" novalidate class="space-y-4">
+                    <!-- Plan selection -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-2">Choose your plan <span class="text-brand-400">*</span></label>
+                        <div id="plan-options" class="grid grid-cols-2 gap-2"></div>
+                    </div>
+
+                    <div>
+                        <label for="org-name" class="block text-sm font-medium text-gray-300 mb-1.5">Organization name <span class="text-brand-400">*</span></label>
+                        <input id="org-name" name="Organization Name" type="text" autocomplete="organization" class="w-full px-4 py-2.5 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors" placeholder="e.g. MoFA SRID">
+                    </div>
+
+                    <div class="grid sm:grid-cols-2 gap-4">
+                        <div>
+                            <label for="contact-email" class="block text-sm font-medium text-gray-300 mb-1.5">Contact email <span class="text-brand-400">*</span></label>
+                            <input id="contact-email" name="Contact Email" type="email" autocomplete="email" class="w-full px-4 py-2.5 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors" placeholder="you@company.com">
+                        </div>
+                        <div>
+                            <label for="phone" class="block text-sm font-medium text-gray-300 mb-1.5">Phone <span class="text-brand-400">*</span></label>
+                            <input id="phone" name="Phone" type="tel" autocomplete="tel" class="w-full px-4 py-2.5 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors" placeholder="+211 ...">
+                        </div>
+                    </div>
+
+                    <div class="grid sm:grid-cols-2 gap-4">
+                        <div>
+                            <label for="admin-name" class="block text-sm font-medium text-gray-300 mb-1.5">First admin name <span class="text-brand-400">*</span></label>
+                            <input id="admin-name" name="First Admin Name" type="text" autocomplete="name" class="w-full px-4 py-2.5 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors" placeholder="Jane Doe">
+                        </div>
+                        <div>
+                            <label for="admin-email" class="block text-sm font-medium text-gray-300 mb-1.5">First admin email <span class="text-brand-400">*</span></label>
+                            <input id="admin-email" name="First Admin Email" type="email" autocomplete="email" class="w-full px-4 py-2.5 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors" placeholder="admin@company.com">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label for="notes" class="block text-sm font-medium text-gray-300 mb-1.5">About your company</label>
+                        <textarea id="notes" name="Company Description" rows="3" class="w-full px-4 py-2.5 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors resize-none" placeholder="What does your organization do? How many workers / sites?"></textarea>
+                    </div>
+
+                    <!-- Payment -->
+                    <div id="payment-area" class="rounded-xl border border-white/10 bg-white/5 p-4">
+                        <div class="flex items-center justify-between gap-3 mb-3">
+                            <div>
+                                <p class="text-sm font-medium text-white">Payment</p>
+                                <p id="payment-plan-label" class="text-xs text-gray-400">Free plan — no payment required.</p>
+                            </div>
+                            <span id="payment-badge" class="text-xs px-2 py-1 rounded-full bg-gray-500/10 text-gray-400 border border-gray-500/20 whitespace-nowrap">Unpaid</span>
+                        </div>
+                        <button type="button" id="pay-btn" class="w-full inline-flex justify-center items-center px-5 py-2.5 rounded-full bg-brand-500 hover:bg-brand-400 text-brand-950 text-sm font-semibold transition-all shadow-[0_0_20px_rgba(16,185,129,0.35)] hover:shadow-[0_0_30px_rgba(16,185,129,0.55)] disabled:opacity-60 disabled:cursor-not-allowed">
+                            Pay now
+                        </button>
+                        <p id="payment-status" class="hidden text-xs mt-3"></p>
+                    </div>
+
+                    <!-- Honeypot (spam protection for Web3Forms) -->
+                    <input type="checkbox" name="botcheck" class="hidden" style="display:none" tabindex="-1" autocomplete="off">
+
+                    <p id="form-status" class="hidden text-sm rounded-lg px-4 py-3"></p>
+
+                    <button type="submit" id="onboard-submit" disabled class="w-full inline-flex justify-center items-center px-6 py-3 rounded-full bg-brand-500 hover:bg-brand-400 text-brand-950 font-semibold transition-all shadow-[0_0_30px_rgba(16,185,129,0.3)] disabled:bg-white/5 disabled:text-gray-500 disabled:shadow-none disabled:cursor-not-allowed">
+                        Submit request
+                    </button>
+                    <p class="text-xs text-gray-500 text-center">Paying plans require a verified Paystack payment before you can submit.</p>
+                </form>
+            </div>
+
+            <!-- Success view -->
+            <div id="onboard-success" class="hidden text-center py-10">
+                <div class="w-16 h-16 mx-auto rounded-full bg-brand-500/15 border border-brand-500/30 flex items-center justify-center mb-5">
+                    <svg class="w-8 h-8 text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                </div>
+                <h3 class="font-display text-2xl font-bold mb-2">Request received</h3>
+                <p class="text-sm text-gray-400 mb-6">Thanks! Your organization's details have been submitted. Our team will reach out to get you set up.</p>
+                <button type="button" data-modal-close class="inline-flex justify-center items-center px-6 py-3 rounded-full bg-white/10 hover:bg-white/20 border border-white/10 text-white text-sm font-medium transition-colors">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
+    <script>
+        // Initialize Animate on Scroll
+        AOS.init({
+            once: true,
+            offset: 100,
+            duration: 800,
+            easing: 'ease-out-cubic',
+        });
+
+        // Mobile Menu Toggle
+        const btn = document.getElementById('mobile-menu-btn');
+        const menu = document.getElementById('mobile-menu');
+
+        btn.addEventListener('click', () => {
+            menu.classList.toggle('hidden');
+        });
+
+        // Navbar scroll effect
+        const navbar = document.getElementById('navbar');
+        window.addEventListener('scroll', () => {
+            if (window.scrollY > 20) {
+                navbar.classList.add('shadow-lg', 'bg-surface/90');
+                navbar.classList.remove('bg-transparent');
+            } else {
+                navbar.classList.remove('shadow-lg', 'bg-surface/90');
+                navbar.classList.add('bg-transparent');
+            }
+        });
+
+        /* ----- Billing plans & Paystack payment ----- */
+        // Paystack public key (reused from the reference project). Replace with your own key if needed.
+        const PAYSTACK_PUBLIC_KEY = 'pk_live_1b6b731c1487772127d4a75602fe5b22ebce1791';
+        const PAYSTACK_CURRENCY = 'GHS';
+        // Server endpoint that verifies the transaction with Paystack's API (see verify-payment.php).
+        const VERIFY_ENDPOINT = 'verify-payment.php';
+
+        const PLANS = {
+            free: {
+                name: 'Free', price: 0, tagline: 'Get started',
+                features: ['Up to 10 workers', '1 work site', 'Polygon geofencing', 'Basic attendance reports', 'Email support']
+            },
+            pro: {
+                name: 'Pro', price: 100, tagline: 'For growing teams', popular: true,
+                features: ['Up to 100 workers', '5 work sites', 'Face verification & device binding', 'GPS sanity checks', 'Payroll exports (CSV / Excel)', 'Priority email support']
+            },
+            ultra: {
+                name: 'Ultra', price: 300, tagline: 'For large organizations',
+                features: ['Unlimited workers', 'Unlimited work sites', 'Everything in Pro', 'Multi-tenant console & RBAC', 'Anomaly alerts & audit logs', 'Dedicated support']
+            },
+            test: {
+                name: 'Test', price: 3, tagline: 'Verify a live payment',
+                features: ['Live Paystack checkout', 'End-to-end payment test', 'No commitment', 'Upgrade to any plan anytime']
+            }
+        };
+
+        const planLabel = (plan) => (plan.price === 0 ? 'Free' : 'GHS ' + plan.price);
+
+        // Render the pricing / billing section cards
+        function renderPricing() {
+            const grid = document.getElementById('pricing-grid');
+            if (!grid) return;
+            grid.innerHTML = Object.keys(PLANS).map((key) => {
+                const plan = PLANS[key];
+                const featured = !!plan.popular;
+                const features = plan.features.map((f) =>
+                    '<li class="flex items-start gap-2 text-gray-300"><svg class="w-4 h-4 text-brand-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>' + f + '</li>'
+                ).join('');
+                return '' +
+                    '<div class="relative glass rounded-2xl p-8 border flex flex-col ' + (featured ? 'border-brand-500/40 shadow-[0_0_40px_rgba(16,185,129,0.15)]' : 'border-white/5') + '" data-aos="fade-up">' +
+                        (featured ? '<span class="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-brand-500 text-brand-950 text-xs font-semibold whitespace-nowrap">Most popular</span>' : '') +
+                        '<h4 class="font-display text-xl font-bold mb-1">' + plan.name + '</h4>' +
+                        '<p class="text-sm text-gray-400 mb-6">' + plan.tagline + '</p>' +
+                        '<div class="mb-6">' +
+                            '<span class="font-display text-4xl font-bold">' + (plan.price === 0 ? 'Free' : 'GHS ' + plan.price) + '</span>' +
+                            '<span class="text-sm text-gray-400">' + (plan.price === 0 ? ' forever' : ' / month') + '</span>' +
+                        '</div>' +
+                        '<ul class="space-y-3 mb-8 text-sm flex-1">' + features + '</ul>' +
+                        '<button type="button" data-get-started data-plan="' + key + '" class="w-full inline-flex justify-center items-center px-6 py-3 rounded-full font-semibold transition-colors ' + (featured ? 'bg-brand-500 hover:bg-brand-400 text-brand-950' : 'bg-white/10 hover:bg-white/20 border border-white/10 text-white') + '">' +
+                            (plan.price === 0 ? 'Start free' : 'Choose ' + plan.name) +
+                        '</button>' +
+                    '</div>';
+            }).join('');
+        }
+
+        /* ----- Organization onboarding (Web3Forms) ----- */
+        // Paste your Web3Forms access key here (get one free at https://web3forms.com).
+        const WEB3FORMS_ACCESS_KEY = '8391a71b-4cdd-4b6c-9acf-b82754bc8161';
+        const WEB3FORMS_ENDPOINT = 'https://api.web3forms.com/submit';
+
+        const modal = document.getElementById('onboard-modal');
+        const formWrap = document.getElementById('onboard-form-wrap');
+        const successView = document.getElementById('onboard-success');
+        const onboardForm = document.getElementById('onboard-form');
+        const formStatus = document.getElementById('form-status');
+        const submitBtn = document.getElementById('onboard-submit');
+        const planOptions = document.getElementById('plan-options');
+        const paymentPlanLabel = document.getElementById('payment-plan-label');
+        const paymentBadge = document.getElementById('payment-badge');
+        const paymentStatus = document.getElementById('payment-status');
+        const payBtn = document.getElementById('pay-btn');
+
+        // Payment state for the current form session
+        let selectedPlan = 'free';
+        let paymentVerified = false;
+        let paymentReference = null;
+        let paidAmount = 0;
+
+        // Build the plan selector inside the modal form from the same PLANS config
+        function renderPlanOptions() {
+            planOptions.innerHTML = Object.keys(PLANS).map((key) => {
+                const plan = PLANS[key];
+                return '' +
+                    '<label class="block cursor-pointer">' +
+                        '<input type="radio" name="plan" value="' + key + '" class="sr-only">' +
+                        '<div class="plan-card rounded-lg border border-white/10 bg-white/5 px-3 py-3 text-center transition-colors hover:border-brand-500/40">' +
+                            '<p class="text-sm font-semibold text-white">' + plan.name + '</p>' +
+                            '<p class="text-xs text-gray-400 mt-0.5">' + planLabel(plan) + '</p>' +
+                        '</div>' +
+                    '</label>';
+            }).join('');
+
+            planOptions.querySelectorAll('input[name="plan"]').forEach((input) => {
+                input.addEventListener('change', () => {
+                    if (input.checked) selectPlan(input.value);
+                });
+            });
+        }
+
+        function highlightPlanCards() {
+            planOptions.querySelectorAll('input[name="plan"]').forEach((input) => {
+                const card = input.parentElement.querySelector('.plan-card');
+                const active = input.value === selectedPlan;
+                input.checked = active;
+                card.classList.toggle('border-brand-500', active);
+                card.classList.toggle('bg-brand-500/10', active);
+                card.classList.toggle('border-white/10', !active);
+                card.classList.toggle('bg-white/5', !active);
+            });
+        }
+
+        function setPaymentStatus(msg, type) {
+            if (!msg) { paymentStatus.classList.add('hidden'); return; }
+            paymentStatus.textContent = msg;
+            paymentStatus.className = 'text-xs mt-3 ' + (type === 'success' ? 'text-brand-300' : 'text-red-400');
+        }
+
+        function setPaymentBadge(verified) {
+            paymentBadge.textContent = verified ? 'Paid' : 'Unpaid';
+            paymentBadge.className = 'text-xs px-2 py-1 rounded-full border whitespace-nowrap ' + (
+                verified
+                    ? 'bg-brand-500/15 text-brand-300 border-brand-500/30'
+                    : 'bg-gray-500/10 text-gray-400 border-gray-500/20'
+            );
+        }
+
+        // Select a plan and (re)set the payment state. The submit button stays disabled
+        // for paid plans until Paystack confirms the payment.
+        function selectPlan(key, opts) {
+            if (!PLANS[key]) key = 'free';
+            const changed = key !== selectedPlan;
+            selectedPlan = key;
+            const plan = PLANS[key];
+
+            if (changed || (opts && opts.reset)) {
+                paymentVerified = false;
+                paymentReference = null;
+                paidAmount = 0;
+            }
+
+            highlightPlanCards();
+            setPaymentStatus('');
+            setPaymentBadge(paymentVerified);
+
+            if (plan.price === 0) {
+                paymentPlanLabel.textContent = 'Free plan — no payment required.';
+                payBtn.classList.add('hidden');
+                submitBtn.disabled = false;
+            } else {
+                paymentPlanLabel.textContent = 'Pay ' + planLabel(plan) + ' to activate the ' + plan.name + ' plan.';
+                payBtn.classList.remove('hidden');
+                payBtn.disabled = false;
+                payBtn.textContent = 'Pay GHS ' + plan.price;
+                submitBtn.disabled = !paymentVerified;
+            }
+        }
+
+        function openModal(planKey) {
+            onboardForm.reset();
+            clearFieldErrors();
+            formStatus.classList.add('hidden');
+            paymentVerified = false;
+            paymentReference = null;
+            paidAmount = 0;
+            selectedPlan = PLANS[planKey] ? planKey : 'free';
+            renderPlanOptions();
+            selectPlan(selectedPlan, { reset: true });
+            submitBtn.textContent = 'Submit request';
+            formWrap.classList.remove('hidden');
+            successView.classList.add('hidden');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            document.body.style.overflow = 'hidden';
+            menu.classList.add('hidden');
+        }
+
+        function closeModal() {
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+            document.body.style.overflow = '';
+        }
+
+        // Delegated so it also covers the dynamically-rendered pricing buttons
+        document.addEventListener('click', (e) => {
+            const trigger = e.target.closest('[data-get-started]');
+            if (!trigger) return;
+            e.preventDefault();
+            openModal(trigger.getAttribute('data-plan') || 'free');
+        });
+        document.querySelectorAll('[data-modal-close]').forEach((el) => {
+            el.addEventListener('click', closeModal);
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && !modal.classList.contains('hidden')) closeModal();
+        });
+
+        /* ----- Paystack checkout + server-side verification ----- */
+        payBtn.addEventListener('click', () => {
+            const plan = PLANS[selectedPlan];
+            if (!plan || plan.price === 0) return;
+
+            const contactEmail = document.getElementById('contact-email');
+            const phone = document.getElementById('phone');
+            const emailCheck = validateEmail(contactEmail.value);
+            if (!emailCheck.ok) {
+                setFieldError(contactEmail, emailCheck.msg);
+                contactEmail.focus();
+                setPaymentStatus('Enter a valid contact email before paying.', 'error');
+                return;
+            }
+            if (typeof PaystackPop === 'undefined') {
+                setPaymentStatus('Payment gateway failed to load. Check your connection and try again.', 'error');
+                return;
+            }
+
+            payBtn.disabled = true;
+            payBtn.textContent = 'Opening checkout...';
+            setPaymentStatus('');
+
+            const paystack = new PaystackPop();
+            paystack.newTransaction({
+                key: PAYSTACK_PUBLIC_KEY,
+                email: contactEmail.value.trim(),
+                phone: phone.value.trim(),
+                amount: Math.round(plan.price * 100),
+                currency: PAYSTACK_CURRENCY,
+                channels: ['mobile_money', 'card'],
+                metadata: {
+                    plan: selectedPlan,
+                    plan_name: plan.name,
+                    organization: document.getElementById('org-name').value.trim(),
+                    custom_fields: [
+                        { display_name: 'Plan', variable_name: 'plan', value: plan.name },
+                        { display_name: 'Organization', variable_name: 'organization', value: document.getElementById('org-name').value.trim() }
+                    ]
+                },
+                onSuccess: (transaction) => {
+                    verifyPayment(transaction.reference, plan);
+                },
+                onCancel: () => {
+                    payBtn.disabled = false;
+                    payBtn.textContent = 'Pay GHS ' + plan.price;
+                    setPaymentStatus('Checkout closed before payment was completed.', 'error');
+                },
+                onError: (error) => {
+                    payBtn.disabled = false;
+                    payBtn.textContent = 'Pay GHS ' + plan.price;
+                    setPaymentStatus((error && error.message) || 'Payment failed. Please try again.', 'error');
+                }
+            });
+        });
+
+        // Confirm the transaction with Paystack via our server before enabling submit
+        async function verifyPayment(reference, plan) {
+            payBtn.disabled = true;
+            payBtn.textContent = 'Verifying...';
+            setPaymentStatus('Verifying your payment with Paystack...', 'success');
+
+            try {
+                const res = await fetch(VERIFY_ENDPOINT, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                    body: JSON.stringify({ reference: reference, plan: selectedPlan })
+                });
+                const data = await res.json();
+
+                if (res.ok && data.status === 'success' && Number(data.amount) >= plan.price) {
+                    paymentVerified = true;
+                    paymentReference = data.reference || reference;
+                    paidAmount = Number(data.amount);
+                    submitBtn.disabled = false;
+                    setPaymentBadge(true);
+                    payBtn.classList.add('hidden');
+                    setPaymentStatus('Payment verified. You can now submit your request.', 'success');
+                } else {
+                    paymentVerified = false;
+                    submitBtn.disabled = true;
+                    setPaymentBadge(false);
+                    payBtn.disabled = false;
+                    payBtn.textContent = 'Pay GHS ' + plan.price;
+                    setPaymentStatus((data && data.message) || 'We could not verify this payment with Paystack.', 'error');
+                }
+            } catch (err) {
+                paymentVerified = false;
+                submitBtn.disabled = true;
+                setPaymentBadge(false);
+                payBtn.disabled = false;
+                payBtn.textContent = 'Pay GHS ' + plan.price;
+                setPaymentStatus('Could not reach the verification server. Make sure verify-payment.php is served (e.g. via XAMPP).', 'error');
+            }
+        }
+
+        /* ----- Email validation ----- */
+        const EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$/;
+        // Common typos that would otherwise "look" valid but aren't working addresses.
+        const TYPO_DOMAINS = {
+            'gmial.com': 'gmail.com', 'gmai.com': 'gmail.com', 'gmal.com': 'gmail.com',
+            'gmail.co': 'gmail.com', 'gmail.con': 'gmail.com', 'gmail.cm': 'gmail.com',
+            'yaho.com': 'yahoo.com', 'yahoo.con': 'yahoo.com', 'hotmial.com': 'hotmail.com',
+            'hotmai.com': 'hotmail.com', 'outlok.com': 'outlook.com', 'outlook.con': 'outlook.com',
+        };
+
+        function validateEmail(value) {
+            const email = (value || '').trim().toLowerCase();
+            if (!email) return { ok: false, msg: 'Email is required.' };
+            if (email.length > 254 || !EMAIL_RE.test(email)) {
+                return { ok: false, msg: 'Please enter a valid email address.' };
+            }
+            const domain = email.split('@')[1];
+            if (domain.includes('..') || domain.startsWith('-') || domain.endsWith('-')) {
+                return { ok: false, msg: 'Please enter a valid email address.' };
+            }
+            if (TYPO_DOMAINS[domain]) {
+                return { ok: false, msg: 'Did you mean @' + TYPO_DOMAINS[domain] + '?' };
+            }
+            return { ok: true };
+        }
+
+        function setFieldError(input, msg) {
+            input.classList.add('border-red-500/60');
+            let err = input.parentElement.querySelector('.field-error');
+            if (!err) {
+                err = document.createElement('p');
+                err.className = 'field-error text-xs text-red-400 mt-1';
+                input.parentElement.appendChild(err);
+            }
+            err.textContent = msg;
+            err.classList.remove('hidden');
+        }
+
+        function clearFieldErrors() {
+            onboardForm.querySelectorAll('.field-error').forEach((el) => {
+                el.textContent = '';
+                el.classList.add('hidden');
+            });
+            onboardForm.querySelectorAll('input, textarea').forEach((el) => {
+                el.classList.remove('border-red-500/60');
+            });
+        }
+
+        function showStatus(msg, type) {
+            formStatus.textContent = msg;
+            formStatus.className = 'text-sm rounded-lg px-4 py-3 border ' + (
+                type === 'success'
+                    ? 'bg-brand-500/10 text-brand-200 border-brand-500/30'
+                    : 'bg-red-500/10 text-red-300 border-red-500/30'
+            );
+        }
+
+        onboardForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            clearFieldErrors();
+            formStatus.classList.add('hidden');
+
+            const orgName = document.getElementById('org-name');
+            const contactEmail = document.getElementById('contact-email');
+            const phone = document.getElementById('phone');
+            const adminName = document.getElementById('admin-name');
+            const adminEmail = document.getElementById('admin-email');
+            const notes = document.getElementById('notes');
+
+            let firstInvalid = null;
+            const requireText = (input, label) => {
+                if (!input.value.trim()) {
+                    setFieldError(input, label + ' is required.');
+                    if (!firstInvalid) firstInvalid = input;
+                }
+            };
+
+            requireText(orgName, 'Organization name');
+            requireText(phone, 'Phone');
+            requireText(adminName, 'First admin name');
+
+            const contactCheck = validateEmail(contactEmail.value);
+            if (!contactCheck.ok) {
+                setFieldError(contactEmail, contactCheck.msg);
+                if (!firstInvalid) firstInvalid = contactEmail;
+            }
+            const adminCheck = validateEmail(adminEmail.value);
+            if (!adminCheck.ok) {
+                setFieldError(adminEmail, adminCheck.msg);
+                if (!firstInvalid) firstInvalid = adminEmail;
+            }
+
+            if (firstInvalid) {
+                firstInvalid.focus();
+                return;
+            }
+
+            // Paid plans must have a verified payment before submitting
+            const plan = PLANS[selectedPlan];
+            if (plan.price > 0 && !paymentVerified) {
+                showStatus('Please complete and verify payment for the ' + plan.name + ' plan before submitting.', 'error');
+                return;
+            }
+
+            if (!WEB3FORMS_ACCESS_KEY || WEB3FORMS_ACCESS_KEY === 'YOUR_WEB3FORMS_ACCESS_KEY') {
+                showStatus('Form is not configured yet. Add your Web3Forms access key to enable submissions.', 'error');
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Submitting...';
+
+            try {
+                // 1. Store the request (the server re-verifies the payment) — source of truth
+                const saveRes = await fetch('save-request.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                    body: JSON.stringify({
+                        organization: orgName.value.trim(),
+                        contact_email: contactEmail.value.trim(),
+                        phone: phone.value.trim(),
+                        admin_name: adminName.value.trim(),
+                        admin_email: adminEmail.value.trim(),
+                        description: notes.value.trim(),
+                        plan: selectedPlan,
+                        reference: paymentReference || ''
+                    })
+                });
+                const saveData = await saveRes.json();
+                if (!saveRes.ok || saveData.status !== 'success') {
+                    throw new Error(saveData.message || 'Something went wrong. Please try again.');
+                }
+
+                // 2. Best-effort email notification via Web3Forms (failure is ignored)
+                fetch(WEB3FORMS_ENDPOINT, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                    body: JSON.stringify({
+                        access_key: WEB3FORMS_ACCESS_KEY,
+                        subject: 'New Geo-Lo onboarding request — ' + orgName.value.trim(),
+                        from_name: 'Geo-Lo Website',
+                        replyto: contactEmail.value.trim(),
+                        'Organization Name': orgName.value.trim(),
+                        'Contact Email': contactEmail.value.trim(),
+                        'Phone': phone.value.trim(),
+                        'First Admin Name': adminName.value.trim(),
+                        'First Admin Email': adminEmail.value.trim(),
+                        'Company Description': notes.value.trim(),
+                        'Selected Plan': plan.name,
+                        'Amount Paid (GHS)': paymentVerified ? paidAmount : 0,
+                        'Payment Reference': paymentReference || 'N/A (free plan)',
+                        botcheck: ''
+                    })
+                }).catch(() => {});
+
+                formWrap.classList.add('hidden');
+                successView.classList.remove('hidden');
+            } catch (err) {
+                showStatus(err.message || 'Network error. Please check your connection and try again.', 'error');
+                submitBtn.disabled = plan.price > 0 ? !paymentVerified : false;
+                submitBtn.textContent = 'Submit request';
+            }
+        });
+
+        /* ----- Login links into the app (worker + organization admin portals) ----- */
+        // Docker/Render serves the website at the site root and the app under /app;
+        // XAMPP serves the website inside /website/. Resolve the app base from the URL.
+        const APP_BASE = /\/website\//.test(window.location.pathname)
+            ? window.location.pathname.replace(/\/website\/[^/]*$/, '/frontend/')
+            : '/app/';
+
+        document.querySelectorAll('[data-app-link]').forEach((link) => {
+            link.setAttribute('href', APP_BASE + link.getAttribute('data-app-link'));
+        });
+
+        const loginMenuBtn = document.getElementById('login-menu-btn');
+        const loginMenuPanel = document.getElementById('login-menu-panel');
+        if (loginMenuBtn && loginMenuPanel) {
+            loginMenuBtn.addEventListener('click', (event) => {
+                event.stopPropagation();
+                loginMenuPanel.classList.toggle('hidden');
+            });
+            loginMenuPanel.addEventListener('click', (event) => event.stopPropagation());
+            document.addEventListener('click', () => loginMenuPanel.classList.add('hidden'));
+        }
+
+        // Render the billing section on load, then let AOS pick up the new cards
+        renderPricing();
+        if (window.AOS) AOS.refreshHard();
+    </script>
+</body>
+</html>

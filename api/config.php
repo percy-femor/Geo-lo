@@ -19,11 +19,53 @@ function loadDotEnv($path) {
 }
 loadDotEnv(dirname(__DIR__) . DIRECTORY_SEPARATOR . '.env');
 
-const GEOLO_SCHEMA_VERSION = 2026110601;
+const GEOLO_SCHEMA_VERSION = 2026112001;
 
 function envFlagEnabled($name) {
     $value = strtolower(trim((string)(getenv($name) ?: '')));
     return in_array($value, ['1', 'true', 'yes', 'on'], true);
+}
+
+/**
+ * Send one transactional email through Resend (https://resend.com).
+ * Returns false when no API key is configured so callers can degrade gracefully.
+ */
+function geoloSendMail($to, $subject, $html) {
+    $key  = trim((string)(getenv('RESEND_API_KEY') ?: ''));
+    $from = trim((string)(getenv('MAIL_FROM') ?: ''));
+    if ($from === '') $from = 'Geo-Lo <onboarding@resend.dev>';
+    if ($key === '' || !function_exists('curl_init')) return false;
+
+    $ch = curl_init('https://api.resend.com/emails');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => json_encode([
+            'from'    => $from,
+            'to'      => [$to],
+            'subject' => $subject,
+            'html'    => $html,
+        ]),
+        CURLOPT_HTTPHEADER     => [
+            'Authorization: Bearer ' . $key,
+            'Content-Type: application/json',
+        ],
+        CURLOPT_TIMEOUT        => 20,
+    ]);
+    $response = curl_exec($ch);
+    $code     = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    return $response !== false && $code >= 200 && $code < 300;
+}
+
+/**
+ * True only when APP_ENV marks the deployment as production. Used to disable
+ * development conveniences (e.g. returning password-reset tokens in API responses).
+ */
+function isProductionEnvironment() {
+    $env = strtolower(trim((string)(getenv('APP_ENV') ?: '')));
+    return in_array($env, ['production', 'prod'], true);
 }
 
 function pdoMysqlOptions() {
@@ -343,9 +385,49 @@ function ensureGeoLoSchema($db) {
         contact_email VARCHAR(120) NULL,
         phone VARCHAR(30) NULL,
         notes VARCHAR(255) NULL,
+        plan VARCHAR(32) NULL,
+        plan_name VARCHAR(60) NULL,
+        onboarding_request_id INT NULL,
         is_active TINYINT(1) DEFAULT 1,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )");
+
+    // Billing plan each organization signed up for, plus the website request it
+    // was created from (see website/save-request.php).
+    foreach ([
+        "plan VARCHAR(32) NULL",
+        "plan_name VARCHAR(60) NULL",
+        "onboarding_request_id INT NULL"
+    ] as $col) {
+        $name = explode(' ', $col)[0];
+        if (!columnExists($db, 'organizations', $name)) ensureColumn($db, 'organizations', $col);
+    }
+
+    // Companies that came through the "Get Started" form on the marketing site.
+    // The Geo-Lo owner registers each organization from one of these rows.
+    $db->exec("CREATE TABLE IF NOT EXISTS onboarding_requests (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        organization VARCHAR(190) NOT NULL,
+        contact_email VARCHAR(190) NOT NULL,
+        phone VARCHAR(60) DEFAULT NULL,
+        admin_name VARCHAR(190) DEFAULT NULL,
+        admin_email VARCHAR(190) DEFAULT NULL,
+        description TEXT,
+        plan VARCHAR(32) NOT NULL DEFAULT 'free',
+        plan_name VARCHAR(60) NOT NULL DEFAULT 'Free',
+        amount_paid DECIMAL(10,2) NOT NULL DEFAULT 0,
+        currency VARCHAR(8) NOT NULL DEFAULT 'GHS',
+        paystack_ref VARCHAR(128) DEFAULT NULL,
+        status ENUM('new','contacted','onboarded') NOT NULL DEFAULT 'new',
+        organization_id INT NULL,
+        email_sent_at DATETIME DEFAULT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_paystack_ref (paystack_ref)
+    )");
+
+    if (!columnExists($db, 'onboarding_requests', 'organization_id')) {
+        ensureColumn($db, 'onboarding_requests', "organization_id INT NULL");
+    }
 
     $db->exec("CREATE TABLE IF NOT EXISTS admins (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -354,9 +436,43 @@ function ensureGeoLoSchema($db) {
         password_hash VARCHAR(255) NOT NULL,
         privilege VARCHAR(20) NOT NULL DEFAULT 'admin',
         organization_id INT NULL,
+        recovery_email VARCHAR(190) NULL,
+        must_change_password TINYINT(1) NOT NULL DEFAULT 0,
+        password_changed_at DATETIME NULL,
         is_active TINYINT(1) DEFAULT 1,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )");
+
+    // Accounts still holding a password somebody else chose (the seeded owner, or an
+    // admin created by the owner / an org admin) must set their own before going on.
+    // recovery_email exists because the owner signs in as boss@geo-lo, not a real inbox.
+    foreach ([
+        "recovery_email VARCHAR(190) NULL",
+        "must_change_password TINYINT(1) NOT NULL DEFAULT 0",
+        "password_changed_at DATETIME NULL"
+    ] as $col) {
+        $name = explode(' ', $col)[0];
+        if (!columnExists($db, 'admins', $name)) ensureColumn($db, 'admins', $col);
+    }
+
+    // One-time codes emailed to any account type (worker, org admin, owner) that asks
+    // for a password/PIN reset. Supersedes the worker-only password_resets table.
+    $db->exec("CREATE TABLE IF NOT EXISTS password_reset_codes (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        account_type VARCHAR(16) NOT NULL,
+        account_id INT NOT NULL,
+        email VARCHAR(190) NOT NULL,
+        code_hash VARCHAR(255) NOT NULL,
+        attempts INT NOT NULL DEFAULT 0,
+        used TINYINT(1) NOT NULL DEFAULT 0,
+        expires_at DATETIME NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_account (account_type, account_id)
+    )");
+
+    if (tableExists($db, 'password_resets')) {
+        $db->exec("DROP TABLE IF EXISTS password_resets");
+    }
 
     $db->exec("CREATE TABLE IF NOT EXISTS sessions (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -477,10 +593,12 @@ function ensureGeoLoSchema($db) {
 
     $ownerEmail = 'boss@geo-lo';
     $ownerPassword = 'boss1234';
+    // boss@geo-lo is a login name, not a deliverable inbox, so owner reset codes go here.
+    $ownerRecoveryEmail = 'percygalley93@gmail.com';
     $count = (int)$db->query("SELECT COUNT(*) FROM admins")->fetchColumn();
     if ($count === 0) {
-        $stmt = $db->prepare("INSERT INTO admins (name, email, password_hash, privilege, organization_id) VALUES (?, ?, ?, ?, NULL)");
-        $stmt->execute(['Geo-Lo Owner', $ownerEmail, password_hash($ownerPassword, PASSWORD_DEFAULT), 'super_admin']);
+        $stmt = $db->prepare("INSERT INTO admins (name, email, password_hash, privilege, recovery_email, must_change_password, organization_id) VALUES (?, ?, ?, ?, ?, 1, NULL)");
+        $stmt->execute(['Geo-Lo Owner', $ownerEmail, password_hash($ownerPassword, PASSWORD_DEFAULT), 'super_admin', $ownerRecoveryEmail]);
     }
 
     if (columnExists($db, 'admins', 'privilege')) {
@@ -518,6 +636,20 @@ function ensureGeoLoSchema($db) {
             if ($fields) {
                 $values[] = $owner['id'];
                 $db->prepare("UPDATE admins SET " . implode(', ', $fields) . " WHERE id = ?")->execute($values);
+            }
+        }
+    }
+
+    if (columnExists($db, 'admins', 'recovery_email')) {
+        $db->prepare("UPDATE admins SET recovery_email = ? WHERE privilege = 'super_admin' AND (recovery_email IS NULL OR recovery_email = '')")
+            ->execute([$ownerRecoveryEmail]);
+
+        // The seeded owner password is public knowledge, so any account still holding it
+        // is forced to set its own before the console will let it through.
+        $flag = $db->prepare("UPDATE admins SET must_change_password = 1 WHERE id = ?");
+        foreach ($db->query("SELECT id, password_hash FROM admins WHERE COALESCE(is_active, 1) = 1")->fetchAll(PDO::FETCH_ASSOC) as $adminRow) {
+            if (password_verify($ownerPassword, (string)$adminRow['password_hash'])) {
+                $flag->execute([(int)$adminRow['id']]);
             }
         }
     }

@@ -8,8 +8,33 @@ CREATE TABLE IF NOT EXISTS organizations (
     contact_email VARCHAR(120) NULL,
     phone VARCHAR(30) NULL,
     notes VARCHAR(255) NULL,
+    plan VARCHAR(32) NULL,
+    plan_name VARCHAR(60) NULL,
+    onboarding_request_id INT NULL,
     is_active TINYINT(1) DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Companies that came through the "Get Started" form on the marketing site.
+-- The Geo-Lo owner registers each organization from one of these rows.
+CREATE TABLE IF NOT EXISTS onboarding_requests (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    organization VARCHAR(190) NOT NULL,
+    contact_email VARCHAR(190) NOT NULL,
+    phone VARCHAR(60) DEFAULT NULL,
+    admin_name VARCHAR(190) DEFAULT NULL,
+    admin_email VARCHAR(190) DEFAULT NULL,
+    description TEXT,
+    plan VARCHAR(32) NOT NULL DEFAULT 'free',
+    plan_name VARCHAR(60) NOT NULL DEFAULT 'Free',
+    amount_paid DECIMAL(10,2) NOT NULL DEFAULT 0,
+    currency VARCHAR(8) NOT NULL DEFAULT 'GHS',
+    paystack_ref VARCHAR(128) DEFAULT NULL,
+    status ENUM('new','contacted','onboarded') NOT NULL DEFAULT 'new',
+    organization_id INT NULL,
+    email_sent_at DATETIME DEFAULT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_paystack_ref (paystack_ref)
 );
 
 -- Workers table
@@ -82,14 +107,19 @@ CREATE TABLE IF NOT EXISTS worker_faces (
     FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS password_resets (
+-- One-time reset codes emailed to workers, organization admins and the owner.
+-- The code itself is hashed; only the hash is stored.
+CREATE TABLE IF NOT EXISTS password_reset_codes (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    worker_id INT NOT NULL,
-    token_hash VARCHAR(255) NOT NULL,
+    account_type VARCHAR(16) NOT NULL,
+    account_id INT NOT NULL,
+    email VARCHAR(190) NOT NULL,
+    code_hash VARCHAR(255) NOT NULL,
+    attempts INT NOT NULL DEFAULT 0,
+    used TINYINT(1) NOT NULL DEFAULT 0,
     expires_at DATETIME NOT NULL,
-    used BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE
+    INDEX idx_account (account_type, account_id)
 );
 
 CREATE TABLE IF NOT EXISTS admins (
@@ -99,6 +129,10 @@ CREATE TABLE IF NOT EXISTS admins (
     password_hash VARCHAR(255) NOT NULL,
     privilege VARCHAR(20) NOT NULL DEFAULT 'admin',
     organization_id INT NULL,
+    -- The owner signs in as boss@geo-lo (not a real inbox); reset codes go here instead.
+    recovery_email VARCHAR(190) NULL,
+    must_change_password TINYINT(1) NOT NULL DEFAULT 0,
+    password_changed_at DATETIME NULL,
     is_active TINYINT(1) DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

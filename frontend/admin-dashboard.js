@@ -29,6 +29,7 @@ class AdminDashboard {
         this.pageCopy = {
             dashboard: ['Dashboard', 'Who is on site, who is late, and today’s exceptions'],
             workers: ['Workers', 'Register and manage employee accounts'],
+            team: ['Team', 'People who can sign in to this console'],
             locations: ['Locations', 'Define geofenced workplaces for check-in'],
             shifts: ['Shifts', 'Expected hours, lateness, and overtime rules'],
             reports: ['Reports', 'Daily, monthly, and payroll-ready hours'],
@@ -130,6 +131,19 @@ class AdminDashboard {
             e.preventDefault();
             this.handleLocationSubmit();
         });
+        document.getElementById('teamForm')?.addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.handleTeamSubmit();
+        });
+        document.getElementById('toggleTeamPassword')?.addEventListener('click', (e) => {
+            const input = document.getElementById('teamPassword');
+            if (!input) return;
+            const show = input.type === 'password';
+            input.type = show ? 'text' : 'password';
+            e.currentTarget.textContent = show ? '🙈' : '👁️';
+        });
+        document.getElementById('refreshTeamBtn')?.addEventListener('click', () => this.loadTeam(true));
+        document.getElementById('retryTeamBtn')?.addEventListener('click', () => this.loadTeam(true));
         document.getElementById('toggleWorkerPassword')?.addEventListener('click', (e) => {
             const input = document.getElementById('workerPassword');
             if (!input) return;
@@ -153,7 +167,7 @@ class AdminDashboard {
         document.getElementById('correctCancel')?.addEventListener('click', () => document.getElementById('correctModal')?.classList.remove('show'));
         document.getElementById('correctSave')?.addEventListener('click', () => this.saveCorrection());
 
-        ['employeeId', 'workerName', 'workerEmail', 'workerPin', 'workerPassword', 'locationName', 'locationPolygon', 'workerSelectReport']
+        ['employeeId', 'workerName', 'workerEmail', 'workerPin', 'workerPassword', 'teamName', 'teamEmail', 'teamPassword', 'locationName', 'locationPolygon', 'workerSelectReport']
             .forEach((id) => {
                 document.getElementById(id)?.addEventListener('input', () => this.clearFieldError(id));
                 document.getElementById(id)?.addEventListener('change', () => this.clearFieldError(id));
@@ -194,6 +208,7 @@ class AdminDashboard {
                 }
                 if (tabId === 'audit') this.loadAudit();
                 if (tabId === 'shifts') this.loadShifts();
+                if (tabId === 'team') this.loadTeam();
             });
         });
     }
@@ -1233,6 +1248,105 @@ class AdminDashboard {
             await this.loadDashboardStats();
         } catch (error) {
             this.toast(error.message, 'error', 'Delete failed');
+        }
+    }
+
+    /* ---------- Team (portal users) ---------- */
+
+    async loadTeam(notify = false) {
+        this.setBanner('teamError', false);
+        try {
+            const users = await this.request('admins.php');
+            this.displayTeam(Array.isArray(users) ? users : []);
+            if (notify) this.toast('Team updated.', 'success');
+        } catch (error) {
+            this.setBanner('teamError', true, error.message);
+            this.displayTeam([]);
+            this.toast(error.message, 'error', 'Team');
+        }
+    }
+
+    displayTeam(users) {
+        const tbody = document.querySelector('#teamTable tbody');
+        if (!tbody) return;
+        if (!users.length) {
+            tbody.innerHTML = `<tr><td colspan="5">${this.emptyState('No users yet', 'Add a user to give someone else access to this console.')}</td></tr>`;
+            return;
+        }
+        tbody.innerHTML = users.map((user) => {
+            const active = Number(user.is_active) === 1;
+            const pending = Number(user.must_change_password) === 1;
+            const status = !active
+                ? '<span class="badge badge-off">Disabled</span>'
+                : pending
+                    ? '<span class="badge badge-warn">Must set password</span>'
+                    : '<span class="badge badge-ok">Active</span>';
+            const remove = user.is_self
+                ? '<span class="badge badge-muted">You</span>'
+                : `<button class="btn btn-danger btn-sm" type="button" data-remove-user="${user.id}">Remove</button>`;
+            return `
+                <tr>
+                    <td>${this.escapeHtml(user.name)}</td>
+                    <td>${this.escapeHtml(user.email)}</td>
+                    <td>${status}</td>
+                    <td>${this.formatDate(user.created_at)}</td>
+                    <td><div class="row-actions">${remove}</div></td>
+                </tr>
+            `;
+        }).join('');
+        tbody.querySelectorAll('[data-remove-user]').forEach((btn) => {
+            btn.addEventListener('click', () => this.removeTeamUser(Number(btn.dataset.removeUser)));
+        });
+    }
+
+    validateTeamForm() {
+        const name = document.getElementById('teamName')?.value.trim();
+        const email = document.getElementById('teamEmail')?.value.trim();
+        const password = document.getElementById('teamPassword')?.value;
+        let valid = true;
+        this.clearFormErrors(['teamName', 'teamEmail', 'teamPassword']);
+        if (!name) { this.setFieldError('teamName', 'Full name is required'); valid = false; }
+        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { this.setFieldError('teamEmail', 'Enter a valid email'); valid = false; }
+        if (!password || password.length < 8) { this.setFieldError('teamPassword', 'Use at least 8 characters'); valid = false; }
+        return valid;
+    }
+
+    async handleTeamSubmit() {
+        if (!this.validateTeamForm()) return;
+        const payload = {
+            name: document.getElementById('teamName').value.trim(),
+            email: document.getElementById('teamEmail').value.trim(),
+            password: document.getElementById('teamPassword').value
+        };
+        const btn = document.getElementById('addUserBtn');
+        this.setButtonLoading(btn, true, 'Adding…');
+        try {
+            const result = await this.request('admins.php', { method: 'POST', body: JSON.stringify(payload) });
+            this.toast(result.message || 'User added.', 'success');
+            document.getElementById('teamForm')?.reset();
+            this.clearFormErrors(['teamName', 'teamEmail', 'teamPassword']);
+            await this.loadTeam();
+        } catch (error) {
+            this.toast(error.message, 'error', 'Could not add user');
+        } finally {
+            this.setButtonLoading(btn, false);
+        }
+    }
+
+    async removeTeamUser(userId) {
+        const ok = await this.confirmDialog({
+            title: 'Remove user',
+            message: 'They lose access to this console immediately. This cannot be undone.',
+            confirmText: 'Remove user',
+            danger: true
+        });
+        if (!ok) return;
+        try {
+            const result = await this.request('admins.php', { method: 'DELETE', body: JSON.stringify({ id: userId }) });
+            this.toast(result.message || 'User removed.', 'success');
+            await this.loadTeam();
+        } catch (error) {
+            this.toast(error.message, 'error', 'Remove failed');
         }
     }
 

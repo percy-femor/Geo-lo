@@ -37,6 +37,8 @@
             localStorage.removeItem('authWorker');
         })();
         window.addEventListener('DOMContentLoaded',function(){
+            const forgot=document.getElementById('forgotLink');
+            if(forgot)forgot.setAttribute('href',GeoSession.siteUrl('reset.html'));
             if(new URLSearchParams(location.search).get('denied')==='1'){
                 const msg=document.getElementById('msg');
                 if(msg){msg.textContent='Sign in with a worker account to open attendance.';msg.className='message error';}
@@ -73,9 +75,7 @@
                 <button type="button" class="toggle-btn" onclick="(function(el){var i=document.getElementById('loginPin');if(!i)return;var s=i.getAttribute('type')==='password';i.setAttribute('type', s?'text':'password');el.textContent=s?'🙈':'👁️';})(this)">👁️</button>
             </div>
             <button class="btn" id="loginBtn" onclick="login(this)">Login</button>
-            <div class="link"><a href="reset.html">Forgot PIN or Password?</a></div>
-            <div class="link"><a href="admin-login.html">Organization admin</a></div>
-            <div class="link"><a href="super-login.html">Geo-Lo owner</a></div>
+            <div class="link"><a href="../website/reset.html" id="forgotLink">Forgot PIN or Password?</a></div>
         </div>
     </div>
 </body>

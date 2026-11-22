@@ -31,6 +31,11 @@ function uniqueOrgSlug($db, $base, $exceptId = null) {
     }
 }
 
+// Billing plans offered by the website (mirror of PLANS in website/index.html).
+function geoloPlans() {
+    return ['free' => 'Free', 'pro' => 'Pro', 'ultra' => 'Ultra', 'test' => 'Test'];
+}
+
 function emailTaken($db, $email, $exceptAdminId = null) {
     if (strtolower(trim($email)) === 'boss@geo-lo') {
         return 'This email is reserved for the Geo-Lo owner';
@@ -71,7 +76,9 @@ function createOrgAdminAccount($db, $session, $orgId, $name, $email, $password) 
     $taken = emailTaken($db, $email);
     if ($taken) sendResponse(["error" => $taken], 409);
     if (strlen($password) < 8) sendResponse(["error" => "Password must be at least 8 characters"], 400);
-    $stmt = $db->prepare("INSERT INTO admins (name, email, password_hash, privilege, organization_id, is_active) VALUES (?, ?, ?, 'admin', ?, 1)");
+    // The password is set by whoever creates the account, so the admin must
+    // choose their own on first sign-in.
+    $stmt = $db->prepare("INSERT INTO admins (name, email, password_hash, privilege, organization_id, must_change_password, is_active) VALUES (?, ?, ?, 'admin', ?, 1, 1)");
     $stmt->execute([$name, $email, password_hash($password, PASSWORD_DEFAULT), $orgId]);
     $id = (int)$db->lastInsertId();
     writeAudit($db, $session, 'create', 'admin', $id, ['email' => $email, 'organization_id' => $orgId]);
@@ -213,6 +220,32 @@ try {
             ]);
         }
 
+        if ($type === 'onboarding_requests') {
+            if (!tableExists($db, 'onboarding_requests')) {
+                sendResponse(['requests' => [], 'counts' => ['total' => 0, 'pending' => 0, 'registered' => 0]]);
+            }
+            $rows = $db->query("SELECT r.*, o.name AS registered_organization_name
+                FROM onboarding_requests r
+                LEFT JOIN organizations o ON o.id = r.organization_id
+                ORDER BY r.created_at DESC, r.id DESC LIMIT 200")->fetchAll(PDO::FETCH_ASSOC);
+
+            $pending = 0;
+            $registered = 0;
+            foreach ($rows as $index => $row) {
+                $isRegistered = !empty($row['organization_id']);
+                if ($isRegistered) {
+                    $registered++;
+                } elseif ($row['status'] === 'new') {
+                    $pending++;
+                }
+                $rows[$index]['plan_name'] = $row['plan_name'] ?: (geoloPlans()[$row['plan']] ?? 'Free');
+            }
+            sendResponse([
+                'requests' => $rows,
+                'counts' => ['total' => count($rows), 'pending' => $pending, 'registered' => $registered]
+            ]);
+        }
+
         sendResponse(["error" => "Unknown resource"], 400);
     }
 
@@ -221,22 +254,65 @@ try {
 
     if ($method === 'POST') {
         if ($action === 'create_organization') {
+            $plans = geoloPlans();
+
+            // A company that filled in the website's "Get Started" form supplies
+            // its own details and the plan it paid for; the owner only confirms.
+            $requestId = (int)($data['onboarding_request_id'] ?? 0);
+            $request = null;
+            if ($requestId) {
+                if (!tableExists($db, 'onboarding_requests')) {
+                    sendResponse(["error" => "Onboarding requests are not available in this database"], 400);
+                }
+                $stmt = $db->prepare("SELECT * FROM onboarding_requests WHERE id = ?");
+                $stmt->execute([$requestId]);
+                $request = $stmt->fetch(PDO::FETCH_ASSOC);
+                if (!$request) sendResponse(["error" => "Onboarding request not found"], 404);
+                if (!empty($request['organization_id'])) {
+                    sendResponse(["error" => "This onboarding request is already registered to an organization"], 409);
+                }
+            }
+
             $name = trim($data['name'] ?? '');
+            if ($name === '') $name = trim((string)($request['organization'] ?? ''));
             if ($name === '') sendResponse(["error" => "Organization name is required"], 400);
+
+            $contactEmail = trim($data['contact_email'] ?? '') ?: trim((string)($request['contact_email'] ?? ''));
+            $phone = trim($data['phone'] ?? '') ?: trim((string)($request['phone'] ?? ''));
+            $notes = trim($data['notes'] ?? '') ?: trim((string)($request['description'] ?? ''));
+
+            // The plan always comes from the request; it is never trusted from the browser.
+            $planKey = null;
+            if ($request) {
+                $planKey = isset($plans[$request['plan']]) ? (string)$request['plan'] : 'free';
+            } elseif (isset($data['plan']) && isset($plans[strtolower((string)$data['plan'])])) {
+                $planKey = strtolower((string)$data['plan']);
+            }
+
             $slug = uniqueOrgSlug($db, slugifyOrgName($name));
-            $stmt = $db->prepare("INSERT INTO organizations (name, slug, contact_email, phone, notes, is_active) VALUES (?, ?, ?, ?, ?, 1)");
+            $stmt = $db->prepare("INSERT INTO organizations (name, slug, contact_email, phone, notes, plan, plan_name, onboarding_request_id, is_active)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)");
             $stmt->execute([
                 $name,
                 $slug,
-                trim($data['contact_email'] ?? '') ?: null,
-                trim($data['phone'] ?? '') ?: null,
-                trim($data['notes'] ?? '') ?: null
+                $contactEmail ?: null,
+                $phone ?: null,
+                $notes ?: null,
+                $planKey,
+                $planKey ? $plans[$planKey] : null,
+                $request ? (int)$request['id'] : null
             ]);
             $orgId = (int)$db->lastInsertId();
             seedOrgShift($db, $orgId);
+
+            if ($request) {
+                $db->prepare("UPDATE onboarding_requests SET status = 'onboarded', organization_id = ? WHERE id = ?")
+                    ->execute([$orgId, (int)$request['id']]);
+            }
+
             $adminId = null;
-            $adminName = trim($data['admin_name'] ?? '');
-            $adminEmail = trim($data['admin_email'] ?? '');
+            $adminName = trim($data['admin_name'] ?? '') ?: trim((string)($request['admin_name'] ?? ''));
+            $adminEmail = trim($data['admin_email'] ?? '') ?: trim((string)($request['admin_email'] ?? ''));
             $adminPassword = $data['admin_password'] ?? '';
             if ($adminName && $adminEmail && $adminPassword) {
                 if (!filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
@@ -244,8 +320,19 @@ try {
                 }
                 $adminId = createOrgAdminAccount($db, $session, $orgId, $adminName, $adminEmail, $adminPassword);
             }
-            writeAudit($db, $session, 'create', 'organization', $orgId, ['name' => $name, 'organization_id' => $orgId]);
-            sendResponse(["message" => "Organization hooked onto Geo-Lo", "id" => $orgId, "admin_id" => $adminId], 201);
+            writeAudit($db, $session, 'create', 'organization', $orgId, [
+                'name' => $name,
+                'plan' => $planKey,
+                'onboarding_request_id' => $request ? (int)$request['id'] : null,
+                'organization_id' => $orgId
+            ]);
+            sendResponse([
+                "message" => $request ? "Organization registered from the onboarding request" : "Organization hooked onto Geo-Lo",
+                "id" => $orgId,
+                "plan" => $planKey,
+                "plan_name" => $planKey ? $plans[$planKey] : null,
+                "admin_id" => $adminId
+            ], 201);
         }
 
         if ($action === 'create_admin') {

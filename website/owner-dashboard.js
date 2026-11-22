@@ -12,9 +12,11 @@ class SuperDashboard {
         this.confirmResolver = null;
         this.admins = [];
         this.organizations = [];
+        this.onboarding = [];
         this.pageCopy = {
             overview: ['Overview', 'Organizations on Geo-Lo and how they are using the product'],
             organizations: ['Organizations', 'Hook companies onto Geo-Lo and suspend access if needed'],
+            onboarding: ['Onboarding', 'Companies that came through the form on the Geo-Lo website'],
             admins: ['Org admins', 'Create the people who track workers for each organization'],
             sessions: ['Sessions', 'Who is signed in across the platform'],
             directory: ['Directory', 'Workers across organizations'],
@@ -27,7 +29,7 @@ class SuperDashboard {
     async init() {
         const allowed = await GeoSession.assertSuperAdmin();
         if (!allowed) {
-            window.location.replace(GeoSession.getRole() === 'admin' ? 'admin.php' : 'super-login.html?denied=1');
+            window.location.replace(GeoSession.getRole() === 'admin' ? GeoSession.appUrl('admin.php') : 'owner-login.html?denied=1');
             return;
         }
         document.body.classList.add('admin-ok');
@@ -88,6 +90,7 @@ class SuperDashboard {
                     if (subtitle) subtitle.textContent = copy[1];
                 }
                 if (tabId === 'organizations') this.loadOrganizations();
+                if (tabId === 'onboarding') this.loadOnboarding();
                 if (tabId === 'admins') this.loadAdmins();
                 if (tabId === 'sessions') this.loadSessions();
                 if (tabId === 'directory') this.loadWorkers();
@@ -105,6 +108,8 @@ class SuperDashboard {
             this.createOrganization();
         });
         document.getElementById('refreshOrgsBtn')?.addEventListener('click', () => this.loadOrganizations(true));
+        document.getElementById('refreshOnboardingBtn')?.addEventListener('click', () => this.loadOnboarding(true));
+        document.getElementById('clearOrgLinkBtn')?.addEventListener('click', () => this.clearOrgLink());
         document.getElementById('adminForm')?.addEventListener('submit', (e) => {
             e.preventDefault();
             this.createAdmin();
@@ -125,6 +130,16 @@ class SuperDashboard {
             document.getElementById('editAdminModal')?.classList.remove('show');
         });
         document.getElementById('editAdminSave')?.addEventListener('click', () => this.saveAdminEdit());
+        document.getElementById('openPasswordBtn')?.addEventListener('click', () => this.openPasswordModal());
+        document.getElementById('passwordCancel')?.addEventListener('click', () => this.closePasswordModal());
+        document.getElementById('passwordSave')?.addEventListener('click', () => this.changePassword());
+        document.querySelectorAll('[data-pw-toggle]').forEach((btn) => btn.addEventListener('click', () => {
+            const input = document.getElementById(btn.dataset.pwToggle);
+            if (!input) return;
+            const show = input.type === 'password';
+            input.type = show ? 'text' : 'password';
+            btn.textContent = show ? '🙈' : '👁️';
+        }));
         ['adminName', 'adminEmail', 'adminPassword', 'adminOrg', 'orgName'].forEach((id) => {
             document.getElementById(id)?.addEventListener('input', () => this.clearFieldError(id));
         });
@@ -258,11 +273,11 @@ class SuperDashboard {
             });
             if (response.status === 401) {
                 GeoSession.clear();
-                window.location.replace('super-login.html?denied=1');
+                window.location.replace('owner-login.html?denied=1');
                 throw new SuperError('Session expired. Please sign in again.');
             }
             if (response.status === 403) {
-                window.location.replace('admin.php');
+                window.location.replace(GeoSession.appUrl('admin.php'));
                 throw new SuperError('Super admin access required.');
             }
             const data = await this.parseJsonSafe(response);
@@ -348,7 +363,7 @@ class SuperDashboard {
         const tbody = document.querySelector('#orgsTable tbody');
         if (!tbody) return;
         if (!rows.length) {
-            tbody.innerHTML = `<tr><td colspan="6">${this.emptyState('No organizations', 'Hook a company onto Geo-Lo to get started.')}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="7">${this.emptyState('No organizations', 'Hook a company onto Geo-Lo to get started.')}</td></tr>`;
             return;
         }
         tbody.innerHTML = rows.map((o) => {
@@ -356,6 +371,7 @@ class SuperDashboard {
             return `
                 <tr>
                     <td>${this.escapeHtml(o.name)}<div class="feed-meta">${this.escapeHtml(o.contact_email || o.notes || '')}</div></td>
+                    <td><span class="badge badge-muted">${this.escapeHtml(o.plan_name || '—')}</span></td>
                     <td>${this.escapeHtml(o.admin_count || 0)}</td>
                     <td>${this.escapeHtml(o.worker_count || 0)}</td>
                     <td>${this.escapeHtml(o.location_count || 0)}</td>
@@ -392,6 +408,7 @@ class SuperDashboard {
         }
         const payload = {
             action: 'create_organization',
+            onboarding_request_id: Number(document.getElementById('orgOnboardingId')?.value || 0),
             name,
             contact_email: document.getElementById('orgEmail')?.value.trim(),
             phone: document.getElementById('orgPhone')?.value.trim(),
@@ -406,13 +423,124 @@ class SuperDashboard {
             const result = await this.request('super.php', { method: 'POST', body: JSON.stringify(payload) });
             this.toast(result.message || 'Organization hooked onto Geo-Lo.', 'success');
             document.getElementById('orgForm')?.reset();
+            this.clearOrgLink();
             await this.loadOrganizations();
+            await this.loadOnboarding();
             await this.loadOverview();
         } catch (error) {
             this.toast(error.message, 'error', 'Could not hook organization');
         } finally {
             this.setButtonLoading(btn, false);
         }
+    }
+
+    async loadOnboarding(notify = false) {
+        try {
+            const data = await this.request('super.php?type=onboarding_requests');
+            this.onboarding = data.requests || [];
+            const counts = data.counts || {};
+            this.animateCount(document.getElementById('statRequests'), counts.total);
+            this.animateCount(document.getElementById('statRequestsPending'), counts.pending);
+            this.animateCount(document.getElementById('statRequestsRegistered'), counts.registered);
+            this.displayOnboarding();
+            if (notify) this.toast('Onboarding requests updated.', 'success');
+        } catch (error) {
+            this.toast(error.message, 'error', 'Onboarding');
+        }
+    }
+
+    displayOnboarding() {
+        const tbody = document.querySelector('#onboardingTable tbody');
+        if (!tbody) return;
+        const rows = this.onboarding || [];
+        if (!rows.length) {
+            tbody.innerHTML = `<tr><td colspan="7">${this.emptyState('No requests yet', 'Companies that use the "Get Started" form on the website will appear here.')}</td></tr>`;
+            return;
+        }
+        tbody.innerHTML = rows.map((r) => {
+            const registered = Number(r.organization_id || 0) > 0;
+            const newRequest = String(r.status) === 'new';
+            const status = registered ? 'Registered' : (newRequest ? 'New' : 'Contacted');
+            const statusBadge = registered ? 'badge-ok' : (newRequest ? 'badge-warn' : 'badge-muted');
+            const paid = Number(r.amount_paid) > 0;
+            const paidLabel = this.escapeHtml(`${r.currency || 'GHS'} ${Number(r.amount_paid).toFixed(2)}`);
+            return `
+                <tr>
+                    <td>${this.escapeHtml(r.organization)}<div class="feed-meta">${this.escapeHtml(r.contact_email || '')}${r.phone ? ' · ' + this.escapeHtml(r.phone) : ''}</div></td>
+                    <td><span class="badge badge-muted">${this.escapeHtml(r.plan_name || 'Free')}</span></td>
+                    <td>${paid ? paidLabel : '<span class="badge badge-muted">Free</span>'}</td>
+                    <td>${this.escapeHtml(r.admin_name || '—')}<div class="feed-meta">${this.escapeHtml(r.admin_email || '')}</div></td>
+                    <td>
+                        <span class="badge ${statusBadge}">${status}</span>
+                        ${registered && r.registered_organization_name ? `<div class="feed-meta">${this.escapeHtml(r.registered_organization_name)}</div>` : ''}
+                    </td>
+                    <td>${this.formatWhen(r.created_at)}</td>
+                    <td>
+                        <div class="row-actions">
+                            ${registered
+                                ? ''
+                                : `<button class="btn btn-primary btn-sm" type="button" data-register-request="${r.id}">Register</button>`}
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+        tbody.querySelectorAll('[data-register-request]').forEach((btn) => {
+            btn.addEventListener('click', () => this.startOrgFromRequest(Number(btn.dataset.registerRequest)));
+        });
+    }
+
+    // Pull a website request into the "Hook an organization" form. The plan is
+    // fixed by the request; the owner only reviews the details and sets a password.
+    startOrgFromRequest(id) {
+        const request = (this.onboarding || []).find((r) => Number(r.id) === Number(id));
+        if (!request) return;
+        if (Number(request.organization_id || 0) > 0) {
+            this.toast('This request already has an organization.', 'warning');
+            return;
+        }
+
+        document.querySelectorAll('.menu-item').forEach((item) => {
+            item.classList.toggle('active', item.getAttribute('data-tab') === 'organizations');
+        });
+        document.querySelectorAll('.tab-content').forEach((tab) => {
+            tab.classList.toggle('active', tab.id === 'organizations');
+        });
+        const copy = this.pageCopy.organizations;
+        const title = document.getElementById('pageTitle');
+        const subtitle = document.getElementById('pageSubtitle');
+        if (title) title.textContent = copy[0];
+        if (subtitle) subtitle.textContent = copy[1];
+
+        const fill = (elId, value) => {
+            const el = document.getElementById(elId);
+            if (el) el.value = value || '';
+        };
+        fill('orgOnboardingId', request.id);
+        fill('orgName', request.organization);
+        fill('orgEmail', request.contact_email);
+        fill('orgPhone', request.phone);
+        fill('orgNotes', request.description);
+        fill('orgAdminName', request.admin_name);
+        fill('orgAdminEmail', request.admin_email);
+        fill('orgAdminPassword', '');
+
+        const text = document.getElementById('orgLinkText');
+        if (text) {
+            const paid = Number(request.amount_paid) > 0
+                ? ` · paid ${request.currency || 'GHS'} ${Number(request.amount_paid).toFixed(2)}`
+                : ' · free plan';
+            text.textContent = `Registering "${request.organization}" from website request #${request.id} — ${request.plan_name || 'Free'} plan${paid}. Set the first admin password, then hook the organization.`;
+        }
+        document.getElementById('orgLinkBanner')?.classList.add('show');
+        document.getElementById('orgForm')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        document.getElementById('orgName')?.focus();
+    }
+
+    clearOrgLink() {
+        const hidden = document.getElementById('orgOnboardingId');
+        if (hidden) hidden.value = '';
+        document.getElementById('orgLinkBanner')?.classList.remove('show');
     }
 
     async setOrgActive(id, active) {
@@ -817,6 +945,43 @@ class SuperDashboard {
         }
     }
 
+    openPasswordModal() {
+        ['currentPassword', 'newPassword', 'confirmNewPassword'].forEach((id) => {
+            const el = document.getElementById(id);
+            if (el) { el.value = ''; el.type = 'password'; }
+        });
+        document.querySelectorAll('[data-pw-toggle]').forEach((b) => { b.textContent = '👁️'; });
+        document.getElementById('passwordModal')?.classList.add('show');
+        document.getElementById('currentPassword')?.focus();
+    }
+
+    closePasswordModal() {
+        document.getElementById('passwordModal')?.classList.remove('show');
+    }
+
+    async changePassword() {
+        const current = document.getElementById('currentPassword')?.value || '';
+        const next = document.getElementById('newPassword')?.value || '';
+        const confirm = document.getElementById('confirmNewPassword')?.value || '';
+        if (!current) { this.toast('Enter your current password.', 'warning', 'Password'); return; }
+        if (next.length < 8) { this.toast('Use at least 8 characters.', 'warning', 'Password'); return; }
+        if (next !== confirm) { this.toast('The two passwords do not match.', 'warning', 'Password'); return; }
+        const btn = document.getElementById('passwordSave');
+        GeoSession.setButtonLoading(btn, true);
+        try {
+            await this.request('auth.php', {
+                method: 'PUT',
+                body: JSON.stringify({ action: 'password', current_password: current, new_password: next })
+            });
+            this.closePasswordModal();
+            this.toast('Your password has been updated.', 'success', 'Password');
+        } catch (error) {
+            this.toast(error.message, 'error', 'Password');
+        } finally {
+            GeoSession.setButtonLoading(btn, false);
+        }
+    }
+
     logout() {
         // Clear local state and leave immediately; the server session is revoked in the background.
         const options = {
@@ -828,7 +993,7 @@ class SuperDashboard {
         };
         try { fetch(`${this.baseUrl}/auth.php`, options).catch(() => {}); } catch (e) {}
         GeoSession.clear();
-        window.location.replace('super-login.html');
+        window.location.replace('owner-login.html');
     }
 }
 

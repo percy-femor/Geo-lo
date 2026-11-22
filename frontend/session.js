@@ -55,11 +55,26 @@ const GeoSession = {
         }
         return headers;
     },
+    // The app lives in /frontend/ (XAMPP: /Geo-lo/frontend/) and the marketing
+    // site in /website/; deployed they are /app/ and / respectively.
+    appBase() {
+        const path = window.location.pathname;
+        const i = path.indexOf('/website/');
+        return i >= 0 ? path.slice(0, i) + '/frontend/' : '/app/';
+    },
+    siteBase() {
+        const path = window.location.pathname;
+        const i = path.indexOf('/frontend/');
+        return i >= 0 ? path.slice(0, i) + '/website/' : '/';
+    },
+    appUrl(path) { return this.appBase() + String(path || '').replace(/^\//, ''); },
+    siteUrl(path) { return this.siteBase() + String(path || '').replace(/^\//, ''); },
     apiRoot() {
         const path = window.location.pathname;
-        const marker = '/frontend/';
-        const idx = path.indexOf(marker);
-        if (idx >= 0) return path.slice(0, idx) + '/api';
+        for (const marker of ['/frontend/', '/website/']) {
+            const idx = path.indexOf(marker);
+            if (idx >= 0) return path.slice(0, idx) + '/api';
+        }
         return '/api';
     },
     apiUrl(path) {

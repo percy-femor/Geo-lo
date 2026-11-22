@@ -20,7 +20,7 @@ if (!$session || $session['role'] !== 'admin') {
     exit;
 }
 
-$stmt = $db->prepare("SELECT a.id, a.name, a.email, a.privilege, a.is_active, a.organization_id,
+$stmt = $db->prepare("SELECT a.id, a.name, a.email, a.privilege, a.is_active, a.organization_id, a.must_change_password,
         o.name AS organization_name, o.is_active AS organization_active
     FROM admins a LEFT JOIN organizations o ON o.id = a.organization_id
     WHERE a.id = ? AND COALESCE(a.is_active, 1) = 1 LIMIT 1");
@@ -39,6 +39,12 @@ if (($admin['privilege'] ?? '') === 'super_admin') {
 
 if (empty($admin['organization_id']) || (int)$admin['organization_active'] !== 1) {
     header('Location: admin-login.html?denied=1', true, 302);
+    exit;
+}
+
+// Still on an issued/default password: make them set their own before the console opens.
+if (!empty($admin['must_change_password'])) {
+    header('Location: set-password.html', true, 302);
     exit;
 }
 

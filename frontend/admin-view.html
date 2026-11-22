@@ -889,6 +889,10 @@
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                     Workers
                 </li>
+                <li class="menu-item" data-tab="team">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M20 8v6"/><path d="M23 11h-6"/></svg>
+                    Team
+                </li>
                 <li class="menu-item" data-tab="locations">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
                     Locations
@@ -1372,6 +1376,66 @@
                     </div>
                 </div>
             </div>
+            <div id="team" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <h3>Add a user</h3>
+                            <p>Give a teammate their own login for this console</p>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <form id="teamForm" novalidate>
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label for="teamName">Full name *</label>
+                                    <input type="text" id="teamName" autocomplete="off" required>
+                                    <span class="field-error" data-for="teamName"></span>
+                                </div>
+                                <div class="form-group">
+                                    <label for="teamEmail">Email *</label>
+                                    <input type="email" id="teamEmail" autocomplete="off" required>
+                                    <span class="field-error" data-for="teamEmail"></span>
+                                </div>
+                                <div class="form-group">
+                                    <label for="teamPassword">Starting password *</label>
+                                    <div class="input-with-icon">
+                                        <input type="password" id="teamPassword" autocomplete="new-password" required>
+                                        <button type="button" class="toggle-btn" id="toggleTeamPassword">👁️</button>
+                                    </div>
+                                    <span class="field-error" data-for="teamPassword"></span>
+                                </div>
+                            </div>
+                            <p class="field-hint">They will set their own password the first time they sign in.</p>
+                            <button class="btn btn-primary" type="submit" id="addUserBtn">Add user</button>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <h3>Portal users</h3>
+                            <p>Everyone who can sign in to this console</p>
+                        </div>
+                        <button class="btn btn-ghost btn-sm" type="button" id="refreshTeamBtn">Refresh</button>
+                    </div>
+                    <div class="card-body">
+                        <div class="banner-error" id="teamError">
+                            <span id="teamErrorText">Could not load users.</span>
+                            <button class="btn btn-ghost btn-sm" type="button" id="retryTeamBtn">Retry</button>
+                        </div>
+                        <div class="table-wrap">
+                            <table id="teamTable">
+                                <thead>
+                                    <tr><th>Name</th><th>Email</th><th>Status</th><th>Added</th><th>Actions</th></tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </main>
     </div>
 
@@ -1413,7 +1477,7 @@
     </div>
 
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-    <script src="admin-dashboard.js?v=20261110a"></script>
+    <script src="admin-dashboard.js?v=20261120a"></script>
 </body>
 
 </html>

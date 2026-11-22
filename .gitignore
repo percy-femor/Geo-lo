@@ -25,6 +25,7 @@ logs/
 tmp/
 temp/
 .cache/
+website/.sessions/
 
 # PHP / Composer
 /vendor/
