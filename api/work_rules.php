@@ -39,6 +39,24 @@ function classifyAttendanceStatus($shift, $checkInDatetime) {
     return strtotime($checkInDatetime) > $limit ? 'late' : 'present';
 }
 
+// Timestamp at which the shift period covering "now" is over, or null when the
+// worker has no shift. Check-ins are refused once this moment has passed.
+function shiftPeriodEnd($shift, $now = null) {
+    if (!$shift || empty($shift['start_time']) || empty($shift['end_time'])) return null;
+    $now = $now ?: time();
+    $startSecs = strtotime('1970-01-01 ' . $shift['start_time']);
+    $endSecs = strtotime('1970-01-01 ' . $shift['end_time']);
+    $overnight = $endSecs <= $startSecs;
+    $anchor = date('Y-m-d', $now);
+    // A shift that runs past midnight belongs to the day it started, so before its
+    // start time we are still inside yesterday's period.
+    if ($overnight && $now < strtotime($anchor . ' ' . $shift['start_time'])) {
+        $anchor = date('Y-m-d', $now - 86400);
+    }
+    $end = strtotime($anchor . ' ' . $shift['end_time']);
+    return $overnight ? $end + 86400 : $end;
+}
+
 function computeOvertimeMinutes($shift, $checkIn, $checkOut) {
     if (!$checkIn || !$checkOut) return 0;
     $worked = max(0, (int)round((strtotime($checkOut) - strtotime($checkIn)) / 60));

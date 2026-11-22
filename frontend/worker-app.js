@@ -19,6 +19,7 @@ class WorkerApp {
         this.lastGeofenceDistance = null;
         this.faceStream = null;
         this.pendingAction = null;
+        this.summaryChart = null;
         this.init();
     }
 
@@ -46,6 +47,101 @@ class WorkerApp {
         this.startLocationTracking();
         this.loadTodayAttendance();
         setInterval(() => this.loadTodayAttendance(), 30000);
+        const monthInput = document.getElementById('summaryMonth');
+        if (monthInput) {
+            monthInput.value = this.currentMonth();
+            monthInput.max = this.currentMonth();
+            monthInput.addEventListener('change', () => this.loadMonthSummary());
+        }
+        await this.loadMonthSummary();
+    }
+
+    currentMonth() {
+        const now = new Date();
+        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    }
+
+    // The worker's month at a glance: fetch the day outcomes, then draw the doughnut,
+    // its legend and the headline numbers. Any failure degrades to a short message
+    // rather than breaking the check-in/out card above.
+    async loadMonthSummary() {
+        const input = document.getElementById('summaryMonth');
+        const month = (input && input.value) || this.currentMonth();
+        const legend = document.getElementById('summaryLegend');
+        if (legend) legend.innerHTML = '<div class="legend-empty">Loading your month…</div>';
+        try {
+            const response = await fetch(`${this.baseUrl}/reports.php?type=summary&month=${encodeURIComponent(month)}`, { headers: this.headers(false), credentials: 'include' });
+            if (response.status === 401) { GeoSession.clear(); window.location.href = 'login.html'; return; }
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Could not load your month');
+            this.renderMonthSummary(data);
+        } catch (error) {
+            if (legend) legend.innerHTML = '<div class="legend-empty">Could not load this month.</div>';
+            const stats = document.getElementById('summaryStats');
+            if (stats) stats.innerHTML = '';
+        }
+    }
+
+    renderMonthSummary(data) {
+        const segments = [
+            { name: 'On time', value: Number(data.on_time) || 0, color: '#10b981' },
+            { name: 'Late', value: Number(data.late) || 0, color: '#f59e0b' },
+            { name: 'Absent', value: Number(data.absent) || 0, color: '#ef4444' }
+        ];
+        const total = segments.reduce((sum, s) => sum + s.value, 0);
+
+        const canvas = document.getElementById('summaryChart');
+        if (canvas && typeof Chart !== 'undefined') {
+            // Chart.js keeps its own instance; destroy the previous one so switching
+            // months replaces the chart instead of layering a new one on top.
+            if (this.summaryChart) this.summaryChart.destroy();
+            this.summaryChart = new Chart(canvas.getContext('2d'), {
+                type: 'doughnut',
+                data: {
+                    labels: segments.map((s) => s.name),
+                    datasets: [{
+                        data: segments.map((s) => s.value),
+                        backgroundColor: segments.map((s) => s.color),
+                        borderWidth: 0,
+                        hoverOffset: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '62%',
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: { callbacks: { label: (ctx) => ` ${ctx.label}: ${ctx.parsed}` } }
+                    }
+                }
+            });
+        }
+
+        const legend = document.getElementById('summaryLegend');
+        if (legend) {
+            if (!total) {
+                legend.innerHTML = '<div class="legend-empty">No scheduled days or records yet this month.</div>';
+            } else {
+                legend.innerHTML = segments.map((s) => {
+                    const pct = Math.round((s.value / total) * 100);
+                    return `<div class="legend-row"><span class="legend-dot" style="background:${s.color}"></span><span class="legend-name">${s.name}</span><span class="legend-value">${s.value} · ${pct}%</span></div>`;
+                }).join('');
+            }
+        }
+
+        const statsEl = document.getElementById('summaryStats');
+        if (statsEl) {
+            const hours = ((Number(data.worked_minutes) || 0) / 60).toFixed(1);
+            const items = [
+                { label: 'Scheduled', value: Number(data.scheduled_days) || 0 },
+                { label: 'Worked', value: Number(data.worked_days) || 0 },
+                { label: 'Hours', value: hours },
+                { label: 'Overtime', value: `${Math.round(Number(data.overtime_minutes) || 0)}m` },
+                { label: 'Missed out', value: Number(data.missed_checkouts) || 0 }
+            ];
+            statsEl.innerHTML = items.map((item) => `<div class="stat"><span class="stat-value">${item.value}</span><span class="stat-label">${item.label}</span></div>`).join('');
+        }
     }
 
     logout() {
@@ -377,10 +473,37 @@ class WorkerApp {
         }
     }
 
+    // Minutes since midnight for a "HH:MM" (or "HH:MM:SS") value, or null when absent.
+    timeToMinutes(value) {
+        const parts = String(value || '').split(':');
+        if (parts.length < 2) return null;
+        const h = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10);
+        return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : null;
+    }
+
+    // True once the worker's scheduled period for today is over. The server refuses
+    // the punch at that point (shiftPeriodEnd in work_rules.php), so the button is
+    // disabled and explained up front instead of failing after the face capture.
+    workPeriodEnded() {
+        const worker = this.currentWorker || {};
+        const start = this.timeToMinutes(worker.start_time);
+        const end = this.timeToMinutes(worker.end_time);
+        if (start === null || end === null) return false;
+        const now = new Date();
+        const nowMinutes = now.getHours() * 60 + now.getMinutes();
+        if (end <= start) {
+            // Overnight shift (e.g. 22:00-06:00): today's period only ends after its own
+            // start time, and an early-morning punch belongs to the night before.
+            return nowMinutes >= start ? false : nowMinutes > end;
+        }
+        return nowMinutes > end;
+    }
+
     updateButtonStates() {
         const workerVerified = !!this.currentWorker && !!GeoSession.getToken();
-        const canCheckIn = workerVerified && this.isWithinGeofence && !this.hasActiveCheckIn;
-        const canCheckOut = workerVerified && this.hasActiveCheckIn;
+        const canCheckIn = workerVerified && this.isWithinGeofence && !this.hasActiveCheckIn && !this.workPeriodEnded();
+        const canCheckOut = workerVerified && this.hasActiveCheckIn && this.isWithinGeofence;
         const checkinBtn = document.getElementById('checkinBtn');
         const checkoutBtn = document.getElementById('checkoutBtn');
         if (checkinBtn) checkinBtn.disabled = !canCheckIn;
@@ -396,8 +519,16 @@ class WorkerApp {
             this.showMessage('Unable to get your location', 'error');
             return;
         }
+        if (action === 'checkin' && this.workPeriodEnded()) {
+            this.showMessage('Your working period for today has ended. Check-in is closed.', 'error');
+            return;
+        }
         if (action === 'checkin' && !this.isWithinGeofence) {
             this.showMessage('You must be within a work area to check in', 'error');
+            return;
+        }
+        if (action === 'checkout' && !this.isWithinGeofence) {
+            this.showMessage('You must be within a work area to check out', 'error');
             return;
         }
         if (action === 'checkin' && this.hasActiveCheckIn) {

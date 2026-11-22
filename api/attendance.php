@@ -98,6 +98,15 @@ try {
         $shift = getWorkerShift($db, $workerId);
 
         if ($data['action'] === 'checkin') {
+            $periodEnd = shiftPeriodEnd($shift);
+            if ($periodEnd !== null && time() > $periodEnd) {
+                logPunchAttempt($db, $workerId, 'checkin', $data, false, 'work period over');
+                sendResponse([
+                    "success" => false,
+                    "message" => "Your working period for today has ended (" . substr($shift['start_time'], 0, 5) . "–" . substr($shift['end_time'], 0, 5) . "). Check-in is closed."
+                ], 400);
+            }
+
             $enrolled = getEnrolledFaceHash($db, $workerId);
             $mustFace = gdAvailable() && ($enrolled || (int)$worker['require_face'] === 1);
             if ($mustFace) {
@@ -156,29 +165,32 @@ try {
         }
 
         if ($data['action'] === 'checkout') {
+            if (!$withinGeofence || !$validLocation) {
+                logPunchAttempt($db, $workerId, 'checkout', $data, false, 'outside geofence');
+                sendResponse([
+                    "success" => false,
+                    "message" => "You are outside all workplace areas. Move to a designated work location to check out."
+                ], 400);
+            }
+
             $stmt = $db->prepare("SELECT * FROM attendance WHERE worker_id = ? AND check_out IS NULL ORDER BY check_in DESC LIMIT 1");
             $stmt->execute([$workerId]);
             $attendance = $stmt->fetch(PDO::FETCH_ASSOC);
             if (!$attendance) {
                 sendResponse(["error" => "No active check-in found"], 400);
             }
-            $outside = $withinGeofence ? 0 : 1;
             $checkOutAt = date('Y-m-d H:i:s');
             $overtime = computeOvertimeMinutes($shift, $attendance['check_in'], $checkOutAt);
-            $upd = $db->prepare("UPDATE attendance SET check_out = ?, check_out_lat = ?, check_out_lng = ?, overtime_minutes = ?, outside_geofence = ? WHERE id = ?");
+            $upd = $db->prepare("UPDATE attendance SET check_out = ?, check_out_lat = ?, check_out_lng = ?, overtime_minutes = ? WHERE id = ?");
             $upd->execute([
                 $checkOutAt,
                 $data['latitude'],
                 $data['longitude'],
                 $overtime,
-                $outside,
                 $attendance['id']
             ]);
-            if ($outside) {
-                createAlert($db, 'offsite_checkout', $worker['name'] . ' checked out outside the work area', $workerId, $attendance['id']);
-            }
-            logPunchAttempt($db, $workerId, 'checkout', $data, true, $outside ? 'outside geofence' : 'ok');
-            writeAudit($db, $session, 'checkout', 'attendance', $attendance['id'], ['overtime_minutes' => $overtime, 'outside_geofence' => $outside]);
+            logPunchAttempt($db, $workerId, 'checkout', $data, true, 'ok');
+            writeAudit($db, $session, 'checkout', 'attendance', $attendance['id'], ['overtime_minutes' => $overtime, 'location_id' => $validLocation['id']]);
             sendResponse(["success" => true, "message" => "Check-out successful", "overtime_minutes" => $overtime]);
         }
 

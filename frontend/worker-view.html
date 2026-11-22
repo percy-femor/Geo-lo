@@ -252,6 +252,23 @@
         @keyframes geo-spin { to { transform: rotate(360deg); } }
 
         .location-meta {margin-top:8px;font-size:12px;color:var(--muted);padding-left:24px;min-height:15px}
+
+        .dash-head {display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:15px}
+        .dash-head h3 {margin-bottom:0}
+        .month-input {padding:7px 10px;border:1px solid rgba(16,163,74,.35);border-radius:10px;background:rgba(16,163,74,.12);color:var(--text);font-family:inherit;font-size:13px;font-weight:600}
+        .month-input:focus {outline:none;border-color:var(--primary)}
+        .dash-body {display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+        .donut-wrap {position:relative;width:140px;height:140px;flex:0 0 auto;margin:0 auto}
+        .legend {flex:1 1 150px;display:flex;flex-direction:column;gap:8px;min-width:140px}
+        .legend-row {display:flex;align-items:center;gap:8px;font-size:13px}
+        .legend-dot {width:10px;height:10px;border-radius:50%;flex:0 0 auto}
+        .legend-name {flex:1;color:var(--muted)}
+        .legend-value {font-weight:600}
+        .legend-empty {font-size:13px;color:var(--muted)}
+        .stat-grid {display:grid;grid-template-columns:repeat(auto-fit,minmax(84px,1fr));gap:10px;margin-top:18px}
+        .stat {background:rgba(255,255,255,.04);border:var(--border);border-radius:14px;padding:12px 8px;text-align:center}
+        .stat-value {display:block;font-size:18px;font-weight:700;color:var(--primary)}
+        .stat-label {display:block;font-size:10px;color:var(--muted);margin-top:4px;text-transform:uppercase;letter-spacing:.5px}
     </style>
 </head>
 
@@ -303,6 +320,22 @@
                     </div>
                 </div>
             </div>
+
+            <div class="attendance-record" style="margin-top:16px">
+                <div class="dash-head">
+                    <h3>Monthly Dashboard</h3>
+                    <input type="month" id="summaryMonth" class="month-input" aria-label="Month to summarise">
+                </div>
+                <div class="dash-body">
+                    <div class="donut-wrap">
+                        <canvas id="summaryChart"></canvas>
+                    </div>
+                    <div class="legend" id="summaryLegend">
+                        <div class="legend-empty">Loading your month…</div>
+                    </div>
+                </div>
+                <div class="stat-grid" id="summaryStats"></div>
+            </div>
         </div>
     </div>
 
@@ -319,7 +352,8 @@
         </div>
     </div>
 
-    <script src="worker-app.js?v=20261110b"></script>
+    <script src="https://unpkg.com/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="worker-app.js?v=20261122a"></script>
     <script>
         (function(){
             const t=document.getElementById('themeToggle');

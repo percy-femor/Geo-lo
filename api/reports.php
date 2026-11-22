@@ -105,6 +105,71 @@ try {
         sendResponse($stmt->fetchAll(PDO::FETCH_ASSOC));
     }
 
+    if ($reportType === 'summary') {
+        // The worker's own month at a glance: day outcomes plus hours.
+        if ($isAdmin) sendResponse(["error" => "Forbidden"], 403);
+        $month = $_GET['month'] ?? date('Y-m');
+        if (!preg_match('/^\d{4}-\d{2}$/', $month)) sendResponse(["error" => "Invalid month"], 400);
+        $workerId = (int)$session['user_id'];
+
+        $shiftStmt = $db->prepare("SELECT s.work_days FROM workers w LEFT JOIN shifts s ON s.id = w.shift_id WHERE w.id = ? LIMIT 1");
+        $shiftStmt->execute([$workerId]);
+        $workDays = $shiftStmt->fetchColumn();
+        $days = $workDays ? array_map('intval', array_filter(explode(',', $workDays), 'strlen')) : [1, 2, 3, 4, 5];
+
+        $stmt = $db->prepare("
+            SELECT DATE(check_in) AS day,
+                SUM(status = 'late') AS late_punches,
+                SUM(TIMESTAMPDIFF(MINUTE, check_in, COALESCE(check_out, check_in))) AS minutes,
+                SUM(COALESCE(overtime_minutes, 0)) AS overtime,
+                SUM(missed_checkout = 1) AS missed
+            FROM attendance
+            WHERE worker_id = ? AND DATE_FORMAT(check_in, '%Y-%m') = ?
+            GROUP BY DATE(check_in)
+        ");
+        $stmt->execute([$workerId, $month]);
+
+        $punched = [];
+        $lateDays = 0;
+        $onTimeDays = 0;
+        $workedMinutes = 0;
+        $overtimeMinutes = 0;
+        $missed = 0;
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $punched[$row['day']] = true;
+            if ((int)$row['late_punches'] > 0) $lateDays++; else $onTimeDays++;
+            $workedMinutes += (int)$row['minutes'];
+            $overtimeMinutes += (int)$row['overtime'];
+            $missed += (int)$row['missed'];
+        }
+
+        // Scheduled days are counted up to yesterday so today's shift is never written
+        // off as an absence before the worker has had a chance to arrive.
+        $monthStart = new DateTime($month . '-01');
+        $monthEnd = (clone $monthStart)->modify('last day of this month');
+        $yesterday = (new DateTime('today'))->modify('-1 day');
+        $limit = $monthEnd < $yesterday ? $monthEnd : $yesterday;
+        $scheduled = 0;
+        $absent = 0;
+        for ($d = clone $monthStart; $d <= $limit; $d->modify('+1 day')) {
+            if (!in_array((int)$d->format('w'), $days, true)) continue;
+            $scheduled++;
+            if (empty($punched[$d->format('Y-m-d')])) $absent++;
+        }
+
+        sendResponse([
+            "month" => $month,
+            "scheduled_days" => $scheduled,
+            "on_time" => $onTimeDays,
+            "late" => $lateDays,
+            "absent" => $absent,
+            "worked_days" => count($punched),
+            "worked_minutes" => $workedMinutes,
+            "overtime_minutes" => $overtimeMinutes,
+            "missed_checkouts" => $missed
+        ]);
+    }
+
     if ($reportType === 'live') {
         $onSite = $db->prepare("
             SELECT w.id, w.name, w.employee_id, l.name AS location_name, a.check_in, a.status
