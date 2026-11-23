@@ -53,7 +53,7 @@ company chose, and the request is linked to the new organization.
 
 1. Create MySQL database `geo_lo` and import `database/schema.sql` (optional if tables already exist — the API also creates missing tables on first request).
 2. Copy `env.example` to `.env` in the project root. Local XAMPP often uses `root` with a blank password. If you set a MySQL password, put the **same** value in `.env` as `DB_PASSWORD`. That is the app setting — it is not a column inside the `geo_lo` tables.
-3. Website settings in the same `.env`: `PAYSTACK_PUBLIC_KEY`, `PAYSTACK_SECRET_KEY`, `RESEND_API_KEY`, `MAIL_FROM`, `OWNER_PASSWORD` and `OWNER_RECOVERY_EMAIL`. Without a Paystack key the "Get Started" form cannot open or verify a payment.
+3. Website settings in the same `.env`: `PAYSTACK_SECRET_KEY`, `RESEND_API_KEY`, `MAIL_FROM`, `OWNER_PASSWORD` and `OWNER_RECOVERY_EMAIL`. The Paystack public key is public by design and is hardcoded in `website/index.html`; without the secret key the "Get Started" form cannot verify a payment.
 4. Use HTTPS in production so the browser can access GPS and camera.
 
 ## Passwords and resets
@@ -91,7 +91,6 @@ Free setup = **Render free web service** (this PHP app) + a **free MySQL somewhe
    | `DB_NAME` | `geo_lo` (or `test`) |
    | `DB_USER` | TiDB user |
    | `DB_PASSWORD` | TiDB password |
-   | `PAYSTACK_PUBLIC_KEY` | Paystack public key |
    | `PAYSTACK_SECRET_KEY` | Paystack secret key |
    | `RESEND_API_KEY` | Resend API key |
    | `MAIL_FROM` | `Geo-Lo <onboarding@resend.dev>` |

@@ -28,10 +28,8 @@ services:
       # pinned to the same offset (see api/config.php).
       - key: APP_TIMEZONE
         sync: false
-      # Paystack: the public key is served to the browser by
-      # website/paystack-config.php, the secret key verifies payments server-side.
-      - key: PAYSTACK_PUBLIC_KEY
-        sync: false
+      # Paystack: only the secret key lives on the server (the public key is public by
+      # design and is hardcoded in index.html). It verifies payments server-side.
       - key: PAYSTACK_SECRET_KEY
         sync: false
       # Resend: mail from this address must come from a domain verified in Resend.

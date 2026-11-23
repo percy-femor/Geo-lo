@@ -52,10 +52,9 @@ define('DB_USER', envValue('DB_USER', 'root'));
 define('DB_PASS', getenv('DB_PASSWORD') !== false ? (string) getenv('DB_PASSWORD') : '');
 
 /* ---------- Paystack (Dashboard > Settings > API Keys & Webhooks) ---------- */
-// Both keys must belong to the same Paystack account: the public key opens checkout
-// (handed to the browser by paystack-config.php) and the secret key verifies the
-// transaction server-side here.
-define('PAYSTACK_PUBLIC_KEY', envValue('PAYSTACK_PUBLIC_KEY'));
+// Only the secret key lives on the server: verify_paystack() uses it to confirm each
+// transaction with Paystack's API. The matching public key is public by design and is
+// hardcoded in index.html.
 define('PAYSTACK_SECRET_KEY', envValue('PAYSTACK_SECRET_KEY'));
 
 /* ---------- Resend (https://resend.com — free tier available) ---------- */
