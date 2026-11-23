@@ -736,11 +736,17 @@
         });
 
         /* ----- Billing plans & Paystack payment ----- */
-        // Paystack public key (reused from the reference project). Replace with your own key if needed.
-        const PAYSTACK_PUBLIC_KEY = 'pk_live_1b6b731c1487772127d4a75602fe5b22ebce1791';
+        // The public key comes from the server environment (see website/paystack-config.php),
+        // so a key change is a dashboard/env change rather than an edit to this file.
+        let PAYSTACK_PUBLIC_KEY = '';
         const PAYSTACK_CURRENCY = 'GHS';
         // Server endpoint that verifies the transaction with Paystack's API (see verify-payment.php).
         const VERIFY_ENDPOINT = 'verify-payment.php';
+
+        fetch('paystack-config.php', { cache: 'no-store' })
+            .then((res) => res.json())
+            .then((cfg) => { if (cfg && cfg.ready) PAYSTACK_PUBLIC_KEY = cfg.public_key || ''; })
+            .catch(() => { /* checkout reports "not configured" until the key loads */ });
 
         const PLANS = {
             free: {
@@ -947,6 +953,10 @@
             }
             if (typeof PaystackPop === 'undefined') {
                 setPaymentStatus('Payment gateway failed to load. Check your connection and try again.', 'error');
+                return;
+            }
+            if (!PAYSTACK_PUBLIC_KEY) {
+                setPaymentStatus('Payments are not set up on this site yet. Please contact Geo-Lo to subscribe.', 'error');
                 return;
             }
 

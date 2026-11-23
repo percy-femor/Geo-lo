@@ -18,3 +18,30 @@ services:
         sync: false
       - key: DB_SSL
         value: "1"
+      - key: DB_SSL_CA
+        sync: false
+      # Marks the deployment as production: internal error text is no longer
+      # returned to API clients (see api/config.php isProductionEnvironment()).
+      - key: APP_ENV
+        value: production
+      # Wall-clock zone used for shift cut-offs. PHP and the MySQL session are
+      # pinned to the same offset (see api/config.php).
+      - key: APP_TIMEZONE
+        sync: false
+      # Paystack: the public key is served to the browser by
+      # website/paystack-config.php, the secret key verifies payments server-side.
+      - key: PAYSTACK_PUBLIC_KEY
+        sync: false
+      - key: PAYSTACK_SECRET_KEY
+        sync: false
+      # Resend: mail from this address must come from a domain verified in Resend.
+      - key: RESEND_API_KEY
+        sync: false
+      - key: MAIL_FROM
+        sync: false
+      # Password of the seeded owner account (boss@geo-lo) and the real inbox that
+      # receives the owner's reset codes. Both are only read on first boot.
+      - key: OWNER_PASSWORD
+        sync: false
+      - key: OWNER_RECOVERY_EMAIL
+        sync: false

@@ -52,6 +52,10 @@ define('DB_USER', envValue('DB_USER', 'root'));
 define('DB_PASS', getenv('DB_PASSWORD') !== false ? (string) getenv('DB_PASSWORD') : '');
 
 /* ---------- Paystack (Dashboard > Settings > API Keys & Webhooks) ---------- */
+// Both keys must belong to the same Paystack account: the public key opens checkout
+// (handed to the browser by paystack-config.php) and the secret key verifies the
+// transaction server-side here.
+define('PAYSTACK_PUBLIC_KEY', envValue('PAYSTACK_PUBLIC_KEY'));
 define('PAYSTACK_SECRET_KEY', envValue('PAYSTACK_SECRET_KEY'));
 
 /* ---------- Resend (https://resend.com — free tier available) ---------- */
@@ -61,9 +65,6 @@ define('RESEND_API_KEY', envValue('RESEND_API_KEY'));
 // Free tier: keep onboarding@resend.dev. Once your domain is verified, switch
 // to something like 'Geo-Lo <no-reply@yourdomain.com>'.
 define('MAIL_FROM', envValue('MAIL_FROM', 'Geo-Lo <onboarding@resend.dev>'));
-
-/* ---------- Owner console ---------- */
-define('OWNER_PASSWORD', envValue('OWNER_PASSWORD', 'change-this-password'));
 
 /** TLS options for hosted MySQL (TiDB Cloud, etc.). Mirrors api/config.php. */
 function sitePdoOptions(): array

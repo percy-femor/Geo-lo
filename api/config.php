@@ -19,7 +19,12 @@ function loadDotEnv($path) {
 }
 loadDotEnv(dirname(__DIR__) . DIRECTORY_SEPARATOR . '.env');
 
-const GEOLO_SCHEMA_VERSION = 2026112301;
+// Shifts are wall-clock times, so the app has to compute "now" in one agreed zone.
+// APP_TIMEZONE defaults to UTC; Database::getConnection() pins the MySQL session to
+// the same offset so PHP's date() and MySQL's NOW() never disagree about the time.
+date_default_timezone_set(getenv('APP_TIMEZONE') ?: 'UTC');
+
+const GEOLO_SCHEMA_VERSION = 2026112302;
 
 function envFlagEnabled($name) {
     $value = strtolower(trim((string)(getenv($name) ?: '')));
@@ -109,6 +114,9 @@ class Database {
             $dsn = "mysql:host={$this->host};port={$this->port};dbname={$this->db_name};charset=utf8mb4";
             $this->conn = new PDO($dsn, $this->username, $this->password, pdoMysqlOptions());
             $this->conn->exec("set names utf8mb4");
+            // Keep MySQL's clock in step with PHP's APP_TIMEZONE so NOW() and date()
+            // never disagree about the current time.
+            $this->conn->exec("SET time_zone = '" . date('P') . "'");
             $this->conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
             ensureGeoLoSchema($this->conn);
         } catch(PDOException $exception) {
@@ -612,13 +620,20 @@ function ensureGeoLoSchema($db) {
     }
 
     $ownerEmail = 'boss@geo-lo';
-    $ownerPassword = 'boss1234';
+    // The first owner password is never a constant in the source. It comes from
+    // OWNER_PASSWORD, and a random one is used when that is unset — in which case the
+    // owner recovers access through OWNER_RECOVERY_EMAIL. must_change_password still
+    // forces a change on the first console login either way.
+    $ownerPassword = trim((string)(getenv('OWNER_PASSWORD') ?: ''));
+    if ($ownerPassword === '') {
+        $ownerPassword = bin2hex(random_bytes(12));
+    }
     // boss@geo-lo is a login name, not a deliverable inbox, so owner reset codes go here.
-    $ownerRecoveryEmail = 'percygalley93@gmail.com';
+    $ownerRecoveryEmail = trim((string)(getenv('OWNER_RECOVERY_EMAIL') ?: ''));
     $count = (int)$db->query("SELECT COUNT(*) FROM admins")->fetchColumn();
     if ($count === 0) {
         $stmt = $db->prepare("INSERT INTO admins (name, email, password_hash, privilege, recovery_email, must_change_password, organization_id) VALUES (?, ?, ?, ?, ?, 1, NULL)");
-        $stmt->execute(['Geo-Lo Owner', $ownerEmail, password_hash($ownerPassword, PASSWORD_DEFAULT), 'super_admin', $ownerRecoveryEmail]);
+        $stmt->execute(['Geo-Lo Owner', $ownerEmail, password_hash($ownerPassword, PASSWORD_DEFAULT), 'super_admin', ($ownerRecoveryEmail !== '' ? $ownerRecoveryEmail : null)]);
     }
 
     if (columnExists($db, 'admins', 'privilege')) {
@@ -661,11 +676,15 @@ function ensureGeoLoSchema($db) {
     }
 
     if (columnExists($db, 'admins', 'recovery_email')) {
-        $db->prepare("UPDATE admins SET recovery_email = ? WHERE privilege = 'super_admin' AND (recovery_email IS NULL OR recovery_email = '')")
-            ->execute([$ownerRecoveryEmail]);
+        // Only backfill when a recovery address is configured, so an unset value never
+        // replaces one that a later deploy could still fill in.
+        if ($ownerRecoveryEmail !== '') {
+            $db->prepare("UPDATE admins SET recovery_email = ? WHERE privilege = 'super_admin' AND (recovery_email IS NULL OR recovery_email = '')")
+                ->execute([$ownerRecoveryEmail]);
+        }
 
-        // The seeded owner password is public knowledge, so any account still holding it
-        // is forced to set its own before the console will let it through.
+        // Any account still holding the seeded/issued password is forced to set its own
+        // before the console will let it through.
         $flag = $db->prepare("UPDATE admins SET must_change_password = 1 WHERE id = ?");
         foreach ($db->query("SELECT id, password_hash FROM admins WHERE COALESCE(is_active, 1) = 1")->fetchAll(PDO::FETCH_ASSOC) as $adminRow) {
             if (password_verify($ownerPassword, (string)$adminRow['password_hash'])) {
@@ -758,6 +777,20 @@ function ensureGeoLoSchema($db) {
         if (tableExists($db, $tenantTable) && columnExists($db, $tenantTable, 'organization_id')) {
             ensureIndex($db, $tenantTable, 'idx_' . $tenantTable . '_org', "KEY idx_{$tenantTable}_org (organization_id)");
         }
+    }
+
+    // Failed-login tracking. Worker PINs are short, so both the worker and admin login
+    // paths count failures here and lock out temporarily once a threshold is passed.
+    if (!tableExists($db, 'login_attempts')) {
+        $db->exec("CREATE TABLE login_attempts (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            scope VARCHAR(20) NOT NULL,
+            identifier VARCHAR(255) NOT NULL,
+            ip VARCHAR(45) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            KEY idx_login_attempts_lookup (scope, identifier, created_at),
+            KEY idx_login_attempts_ip (ip, created_at)
+        )");
     }
 
     try {

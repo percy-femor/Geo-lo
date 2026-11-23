@@ -19,10 +19,9 @@ COPY frontend ./frontend
 COPY website ./website
 COPY database ./database
 
-# .sessions keeps the owner console login working when the PHP temp dir is not
-# writable by the web server user (see website/owner.php).
-RUN mkdir -p /var/www/html/website/.sessions \
-    && chown -R www-data:www-data /var/www/html
+# The owner console and the consoles use the database-backed sessions table
+# (api/auth_lib.php), so no writable PHP session directory is needed.
+RUN chown -R www-data:www-data /var/www/html
 
 EXPOSE 80
 CMD ["start-geolo.sh"]

@@ -16,6 +16,78 @@ function getRequestToken() {
     return null;
 }
 
+/**
+ * Failed-login throttling.
+ *
+ * Worker PINs are short enough to guess, so failures are counted per scope + identifier
+ * (and per IP as a spray guard) inside a rolling window. Both login endpoints call
+ * assertLoginAllowed() first and recordLoginFailure() when a check fails.
+ */
+const LOGIN_MAX_ATTEMPTS = 5;
+const LOGIN_MAX_ATTEMPTS_PER_IP = 20;
+const LOGIN_WINDOW_MINUTES = 15;
+
+function clientIp() {
+    $forwarded = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? '';
+    if (trim($forwarded) !== '') {
+        return trim(explode(',', $forwarded)[0]);
+    }
+    return $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+}
+
+// Rows older than the window are irrelevant, so the cutoff is computed in PHP against
+// the same clock the DB session is pinned to.
+function loginThrottleCutoff() {
+    return date('Y-m-d H:i:s', time() - (LOGIN_WINDOW_MINUTES * 60));
+}
+
+// Seconds the caller must wait before trying again, or 0 when not locked out.
+function loginLockoutRemaining($db, $scope, $identifier) {
+    $cutoff = loginThrottleCutoff();
+    $ip = clientIp();
+
+    $stmt = $db->prepare("SELECT COUNT(*) FROM login_attempts WHERE scope = ? AND identifier = ? AND created_at > ?");
+    $stmt->execute([$scope, $identifier, $cutoff]);
+    if ((int)$stmt->fetchColumn() < LOGIN_MAX_ATTEMPTS) {
+        $stmt = $db->prepare("SELECT COUNT(*) FROM login_attempts WHERE scope = ? AND ip = ? AND created_at > ?");
+        $stmt->execute([$scope, $ip, $cutoff]);
+        if ((int)$stmt->fetchColumn() < LOGIN_MAX_ATTEMPTS_PER_IP) {
+            return 0;
+        }
+    }
+
+    // The oldest failure in the window decides when the lockout lifts.
+    $stmt = $db->prepare("SELECT created_at FROM login_attempts WHERE scope = ? AND (identifier = ? OR ip = ?) AND created_at > ? ORDER BY created_at ASC LIMIT 1");
+    $stmt->execute([$scope, $identifier, $ip, $cutoff]);
+    $oldest = $stmt->fetchColumn();
+    if (!$oldest) {
+        return LOGIN_WINDOW_MINUTES * 60;
+    }
+    return max((strtotime($oldest) + (LOGIN_WINDOW_MINUTES * 60)) - time(), 60);
+}
+
+function recordLoginFailure($db, $scope, $identifier) {
+    $stmt = $db->prepare("INSERT INTO login_attempts (scope, identifier, ip) VALUES (?, ?, ?)");
+    $stmt->execute([$scope, mb_substr((string)$identifier, 0, 255), clientIp()]);
+    // Prune occasionally so the table does not grow without bound.
+    if (random_int(1, 20) === 1) {
+        $db->prepare("DELETE FROM login_attempts WHERE created_at < ?")->execute([date('Y-m-d H:i:s', time() - 86400)]);
+    }
+}
+
+function clearLoginFailures($db, $scope, $identifier) {
+    $db->prepare("DELETE FROM login_attempts WHERE scope = ? AND identifier = ?")->execute([$scope, $identifier]);
+}
+
+// Refuses the request with 429 while the caller is locked out.
+function assertLoginAllowed($db, $scope, $identifier) {
+    $wait = loginLockoutRemaining($db, $scope, $identifier);
+    if ($wait > 0) {
+        $minutes = max(1, (int)ceil($wait / 60));
+        sendResponse(["error" => "Too many failed attempts. Try again in about {$minutes} minute(s)."], 429);
+    }
+}
+
 function serveHtmlWithBoot($file, $boot) {
     $html = file_get_contents($file);
     if ($html === false) {

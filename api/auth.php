@@ -48,6 +48,8 @@ try {
             if (empty($data['email']) || empty($data['password'])) {
                 sendResponse(["error" => "Email and password required"], 400);
             }
+            $adminIdentifier = strtolower(trim((string)$data['email']));
+            assertLoginAllowed($db, 'admin', $adminIdentifier);
             $stmt = $db->prepare("SELECT id FROM workers WHERE email = ? AND COALESCE(is_active, 1) = 1 LIMIT 1");
             $stmt->execute([$data['email']]);
             if ($stmt->fetch()) {
@@ -59,8 +61,10 @@ try {
             $stmt->execute([$data['email']]);
             $admin = $stmt->fetch(PDO::FETCH_ASSOC);
             if (!$admin || !password_verify($data['password'], $admin['password_hash'])) {
+                recordLoginFailure($db, 'admin', $adminIdentifier);
                 sendResponse(["error" => "Invalid admin credentials"], 401);
             }
+            clearLoginFailures($db, 'admin', $adminIdentifier);
             $privilege = normalizeAdminPrivilege($admin['privilege'] ?? 'admin');
             $console = $data['console'] ?? '';
             if ($console === 'super' && $privilege !== 'super_admin') {
@@ -91,6 +95,8 @@ try {
         if (empty($data['email']) || empty($data['pin'])) {
             sendResponse(["error" => "Organization, email and PIN required"], 400);
         }
+        $workerIdentifier = strtolower(trim((string)$data['email']));
+        assertLoginAllowed($db, 'worker', $workerIdentifier);
         $orgInput = trim((string)($data['organization'] ?? ''));
         if ($orgInput === '') {
             sendResponse(["error" => "Enter your organization name"], 400);
@@ -111,8 +117,10 @@ try {
         $stmt->execute([$data['email'], $org['id']]);
         $worker = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$worker || empty($worker['pin_hash']) || !password_verify($data['pin'], $worker['pin_hash'])) {
+            recordLoginFailure($db, 'worker', $workerIdentifier);
             sendResponse(["error" => "Invalid credentials"], 401);
         }
+        clearLoginFailures($db, 'worker', $workerIdentifier);
         if ((int)$worker['device_bound'] === 1 && !empty($worker['device_fingerprint']) && $fingerprint && $worker['device_fingerprint'] !== $fingerprint) {
             sendResponse(["error" => "This account is bound to another device. Ask an admin to reset it."], 403);
         }
@@ -174,5 +182,11 @@ try {
 
     sendResponse(["error" => "Method not allowed"], 405);
 } catch (Exception $e) {
-    sendResponse(["error" => $e->getMessage()], 500);
+    // Never hand internal exception text to a client in production: it can expose SQL,
+    // paths and table names. Log it instead.
+    if (!isProductionEnvironment()) {
+        sendResponse(["error" => $e->getMessage()], 500);
+    }
+    error_log('auth.php: ' . $e->getMessage());
+    sendResponse(["error" => "Something went wrong. Please try again."], 500);
 }
