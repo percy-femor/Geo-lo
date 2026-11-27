@@ -122,10 +122,16 @@ try {
         }
 
         if ($type === 'organizations') {
+            // Alongside the counts, surface the company's primary admin so the owner can
+            // see and fix the name that its login requires.
+            $primaryAdmin = "(SELECT a.%s FROM admins a WHERE a.organization_id = o.id AND a.privilege <> 'super_admin' ORDER BY COALESCE(a.is_active,1) DESC, a.id ASC LIMIT 1)";
             $stmt = $db->query("SELECT o.*,
                 (SELECT COUNT(*) FROM admins a WHERE a.organization_id = o.id AND COALESCE(a.is_active,1)=1) AS admin_count,
                 (SELECT COUNT(*) FROM workers w WHERE w.organization_id = o.id AND COALESCE(w.is_active,1)=1) AS worker_count,
-                (SELECT COUNT(*) FROM locations l WHERE l.organization_id = o.id) AS location_count
+                (SELECT COUNT(*) FROM locations l WHERE l.organization_id = o.id) AS location_count,
+                " . sprintf($primaryAdmin, 'id') . " AS admin_id,
+                " . sprintf($primaryAdmin, 'name') . " AS admin_name,
+                " . sprintf($primaryAdmin, 'email') . " AS admin_email
                 FROM organizations o ORDER BY o.name");
             sendResponse($stmt->fetchAll(PDO::FETCH_ASSOC));
         }
@@ -304,6 +310,9 @@ try {
                 if (strlen($adminPassword) < 8) {
                     sendResponse(["error" => "Password must be at least 8 characters"], 400);
                 }
+            } elseif ($adminName !== '' || $adminEmail !== '' || $adminPassword !== '') {
+                // A half-filled admin would create an organization nobody can sign in to.
+                sendResponse(["error" => "To create the first admin, fill in the admin name, email, and password — or leave all three blank and add the admin later."], 400);
             }
 
             $slug = uniqueOrgSlug($db, slugifyOrgName($name));
@@ -408,9 +417,69 @@ try {
                     }
                 }
             }
-            if (!$fields) sendResponse(["message" => "No fields to update"]);
-            $values[] = $id;
-            $db->prepare("UPDATE organizations SET " . implode(', ', $fields) . " WHERE id = ?")->execute($values);
+            // The organization's admin signs in with the admin name, so the owner can add
+            // or fix it here. This only runs when the edit modal actually sends admin fields.
+            $adminName = trim((string)($data['admin_name'] ?? ''));
+            $adminEmail = trim((string)($data['admin_email'] ?? ''));
+            $adminPassword = (string)($data['admin_password'] ?? '');
+            $adminId = (int)($data['admin_id'] ?? 0);
+            $adminTouched = array_key_exists('admin_name', $data) || array_key_exists('admin_email', $data) || $adminPassword !== '';
+            if ($adminTouched) {
+                if ($adminId) {
+                    $stmt = $db->prepare("SELECT * FROM admins WHERE id = ? AND organization_id = ?");
+                    $stmt->execute([$adminId, $id]);
+                    $admin = $stmt->fetch(PDO::FETCH_ASSOC);
+                    if (!$admin) sendResponse(["error" => "Organization admin not found"], 404);
+                    if (normalizeAdminPrivilege($admin['privilege'] ?? 'admin') === 'super_admin') {
+                        sendResponse(["error" => "Geo-Lo owner accounts are not managed here"], 400);
+                    }
+                    $adminFields = [];
+                    $adminValues = [];
+                    if ($adminName !== '' && $adminName !== $admin['name']) {
+                        $adminFields[] = "name = ?";
+                        $adminValues[] = $adminName;
+                    }
+                    if ($adminEmail !== '' && strcasecmp($adminEmail, (string)$admin['email']) !== 0) {
+                        if (!filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
+                            sendResponse(["error" => "Enter a valid admin email"], 400);
+                        }
+                        $taken = emailTaken($db, $adminEmail, $adminId);
+                        if ($taken) sendResponse(["error" => $taken], 409);
+                        $adminFields[] = "email = ?";
+                        $adminValues[] = $adminEmail;
+                    }
+                    if ($adminPassword !== '') {
+                        if (strlen($adminPassword) < 8) {
+                            sendResponse(["error" => "Password must be at least 8 characters"], 400);
+                        }
+                        $adminFields[] = "password_hash = ?";
+                        $adminValues[] = password_hash($adminPassword, PASSWORD_DEFAULT);
+                    }
+                    if ($adminFields) {
+                        $adminValues[] = $adminId;
+                        $db->prepare("UPDATE admins SET " . implode(', ', $adminFields) . " WHERE id = ?")->execute($adminValues);
+                        if ($adminPassword !== '') revokeAdminSessions($db, $adminId);
+                        $details['admin'] = ['id' => $adminId, 'name' => $adminName !== '' ? $adminName : $admin['name']];
+                    }
+                } elseif ($adminName !== '' && $adminEmail !== '') {
+                    // The organization was hooked without an admin; create one now so its
+                    // people can actually sign in.
+                    if ($adminPassword === '') {
+                        sendResponse(["error" => "Set a password for the new admin"], 400);
+                    }
+                    $details['admin_id'] = createOrgAdminAccount($db, $session, $id, $adminName, $adminEmail, $adminPassword);
+                } elseif ($adminName !== '' || $adminEmail !== '' || $adminPassword !== '') {
+                    sendResponse(["error" => "Enter the admin name and email to create the account"], 400);
+                }
+            }
+
+            if (!$fields && empty($details['admin']) && empty($details['admin_id'])) {
+                sendResponse(["message" => "No fields to update"]);
+            }
+            if ($fields) {
+                $values[] = $id;
+                $db->prepare("UPDATE organizations SET " . implode(', ', $fields) . " WHERE id = ?")->execute($values);
+            }
             $details['organization_id'] = $id;
             writeAudit($db, $session, 'update', 'organization', $id, $details);
             sendResponse(["message" => "Organization updated"]);

@@ -777,7 +777,7 @@
     <div class="modal-backdrop" id="editOrgModal" role="dialog" aria-modal="true">
         <div class="modal">
             <h3>Edit organization</h3>
-            <p>Update this company's details. Suspend it separately to lock out its admins and workers.</p>
+            <p>Update this company's details and the admin account its sign-in needs.</p>
             <input type="hidden" id="editOrgId">
             <div class="form-group">
                 <label for="editOrgName">Organization name</label>
@@ -794,6 +794,21 @@
             <div class="form-group">
                 <label for="editOrgNotes">Notes</label>
                 <input type="text" id="editOrgNotes">
+            </div>
+            <div class="form-group">
+                <label for="editOrgAdminName">Admin name</label>
+                <input type="hidden" id="editOrgAdminId">
+                <input type="text" id="editOrgAdminName">
+                <span class="field-hint" id="editOrgAdminHint"></span>
+            </div>
+            <div class="form-group">
+                <label for="editOrgAdminEmail">Admin email</label>
+                <input type="email" id="editOrgAdminEmail">
+            </div>
+            <div class="form-group">
+                <label for="editOrgAdminPassword">Admin password</label>
+                <input type="password" id="editOrgAdminPassword" placeholder="Leave blank to keep the current one">
+                <span class="field-hint">Required only when creating the admin. 8+ characters.</span>
             </div>
             <div class="modal-actions">
                 <button class="btn btn-ghost" type="button" id="editOrgCancel">Cancel</button>
@@ -835,6 +850,6 @@
         </div>
     </div>
 
-    <script src="owner-dashboard.js?v=20261124a"></script>
+    <script src="owner-dashboard.js?v=20261127a"></script>
 </body>
 </html>

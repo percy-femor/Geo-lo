@@ -374,7 +374,7 @@ class SuperDashboard {
             const active = Number(o.is_active) === 1;
             return `
                 <tr>
-                    <td>${this.escapeHtml(o.name)}<div class="feed-meta">${this.escapeHtml(o.contact_email || o.notes || '')}</div></td>
+                    <td>${this.escapeHtml(o.name)}<div class="feed-meta">${this.escapeHtml(o.contact_email || o.notes || '')}</div><div class="feed-meta">${o.admin_name ? 'Admin: ' + this.escapeHtml(o.admin_name) : 'No admin yet'}</div></td>
                     <td><span class="badge badge-muted">${this.escapeHtml(o.plan_name || '—')}</span></td>
                     <td>${this.escapeHtml(o.admin_count || 0)}</td>
                     <td>${this.escapeHtml(o.worker_count || 0)}</td>
@@ -442,7 +442,7 @@ class SuperDashboard {
         }
     }
 
-    // Edit an organization's own details (name, contact email, phone, notes).
+    // Edit an organization's own details plus the admin account its login needs.
     // Its plan comes from the onboarding request and is changed elsewhere.
     openEditOrg(id) {
         const org = (this.organizations || []).find((o) => Number(o.id) === Number(id));
@@ -452,6 +452,17 @@ class SuperDashboard {
         document.getElementById('editOrgEmail').value = org.contact_email || '';
         document.getElementById('editOrgPhone').value = org.phone || '';
         document.getElementById('editOrgNotes').value = org.notes || '';
+        // The admin signs in with this name, so let the owner see and fix it here.
+        document.getElementById('editOrgAdminId').value = org.admin_id || '';
+        document.getElementById('editOrgAdminName').value = org.admin_name || '';
+        document.getElementById('editOrgAdminEmail').value = org.admin_email || '';
+        document.getElementById('editOrgAdminPassword').value = '';
+        const hint = document.getElementById('editOrgAdminHint');
+        if (hint) {
+            hint.textContent = org.admin_id
+                ? 'This name and email are what the admin signs in with.'
+                : 'No admin yet — enter a name, email, and password to create one so this organization can sign in.';
+        }
         document.getElementById('editOrgModal')?.classList.add('show');
     }
 
@@ -473,7 +484,11 @@ class SuperDashboard {
                     name,
                     contact_email: document.getElementById('editOrgEmail')?.value.trim(),
                     phone: document.getElementById('editOrgPhone')?.value.trim(),
-                    notes: document.getElementById('editOrgNotes')?.value.trim()
+                    notes: document.getElementById('editOrgNotes')?.value.trim(),
+                    admin_id: Number(document.getElementById('editOrgAdminId')?.value || 0),
+                    admin_name: document.getElementById('editOrgAdminName')?.value.trim(),
+                    admin_email: document.getElementById('editOrgAdminEmail')?.value.trim(),
+                    admin_password: document.getElementById('editOrgAdminPassword')?.value || ''
                 })
             });
             document.getElementById('editOrgModal')?.classList.remove('show');
