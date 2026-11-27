@@ -39,7 +39,14 @@ function geoloSendMail($to, $subject, $html) {
     $key  = trim((string)(getenv('RESEND_API_KEY') ?: ''));
     $from = trim((string)(getenv('MAIL_FROM') ?: ''));
     if ($from === '') $from = 'Geo-Lo <onboarding@resend.dev>';
-    if ($key === '' || !function_exists('curl_init')) return false;
+    if ($key === '') {
+        error_log('geoloSendMail: RESEND_API_KEY is not set — mail not sent to ' . $to);
+        return false;
+    }
+    if (!function_exists('curl_init')) {
+        error_log('geoloSendMail: the PHP curl extension is missing — mail not sent to ' . $to);
+        return false;
+    }
 
     $ch = curl_init('https://api.resend.com/emails');
     curl_setopt_array($ch, [
@@ -61,7 +68,11 @@ function geoloSendMail($to, $subject, $html) {
     $code     = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
 
-    return $response !== false && $code >= 200 && $code < 300;
+    if ($response === false || $code < 200 || $code >= 300) {
+        error_log('geoloSendMail: Resend rejected the message for ' . $to . ' — HTTP ' . $code . ' ' . (string)$response);
+        return false;
+    }
+    return true;
 }
 
 /**

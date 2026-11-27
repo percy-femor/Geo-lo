@@ -143,7 +143,16 @@ try {
             date('Y-m-d H:i:s', time() + RESET_CODE_TTL_SECONDS)
         ]);
 
-        geoloSendMail($account['deliver_to'], 'Your Geo-Lo password reset code', resetCodeEmailHtml($account['name'], $code));
+        $sent = geoloSendMail($account['deliver_to'], 'Your Geo-Lo password reset code', resetCodeEmailHtml($account['name'], $code));
+        if (!$sent) {
+            // The code only travels by email, so an unsent email means the user has no
+            // way to continue. Say so plainly instead of pretending a code is on its way.
+            error_log('password_reset.php: could not email a reset code to ' . $account['deliver_to']);
+            $isOwner = $account['type'] === 'admin' && stripos((string)$account['deliver_to'], '@geo-lo') !== false;
+            sendResponse(["error" => $isOwner
+                ? "The owner recovery inbox is not configured, so the reset code cannot be sent. Ask Geo-Lo to set OWNER_RECOVERY_EMAIL."
+                : "We could not send the reset email right now. Please try again shortly, or contact Geo-Lo support."], 502);
+        }
 
         // The code only ever travels by email — never back to the browser.
         sendResponse([
