@@ -342,8 +342,8 @@
     <div class="face-modal" id="faceModal">
         <div class="face-card">
             <h3>Face check</h3>
-            <p style="color:var(--muted);font-size:13px;margin:8px 0 12px">Look straight at the camera in good light. If the photo is blurry or dark, check-in is blocked and you must retake it.</p>
-            <video id="faceVideo" autoplay playsinline></video>
+            <p style="color:var(--muted);font-size:13px;margin:8px 0 12px">Look straight at the camera in good light with your whole face in view. If no face is found, check-in is blocked and you must retake it.</p>
+            <video id="faceVideo" autoplay playsinline muted></video>
             <canvas id="faceCanvas" hidden></canvas>
             <div class="face-actions">
                 <button class="btn btn-checkin" id="captureFaceBtn" type="button">Capture & check in</button>
@@ -353,7 +353,8 @@
     </div>
 
     <script src="https://unpkg.com/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-    <script src="worker-app.js?v=20261122a"></script>
+    <script src="face.js?v=20261124a"></script>
+    <script src="worker-app.js?v=20261124a"></script>
     <script>
         (function(){
             const t=document.getElementById('themeToggle');

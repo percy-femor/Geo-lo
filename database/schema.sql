@@ -110,12 +110,33 @@ CREATE TABLE attendance (
 INSERT INTO locations (name, latitude, longitude, radius_meters, is_default) 
 VALUES ('Main Office', 40.7128, -74.0060, 100, TRUE);
 
+-- 128-D face embeddings captured in the browser via face-api.js. Only the
+-- descriptor (JSON array of 128 floats) reaches the server; no image is stored.
+-- `phash` is kept nullable for rows written by the retired aHash engine.
 CREATE TABLE IF NOT EXISTS worker_faces (
     id INT AUTO_INCREMENT PRIMARY KEY,
     worker_id INT NOT NULL,
-    phash VARCHAR(128) NOT NULL,
+    phash VARCHAR(128) NULL,
+    descriptor TEXT NULL,
+    engine VARCHAR(32) NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE
+);
+
+-- Short-lived, single-use tokens issued after a correct worker PIN. A session is
+-- only created once the face enroll/verify step against this challenge passes.
+CREATE TABLE IF NOT EXISTS login_challenges (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    token_hash VARCHAR(64) NOT NULL UNIQUE,
+    role ENUM('admin','worker') NOT NULL,
+    user_id INT NOT NULL,
+    purpose VARCHAR(24) NOT NULL DEFAULT 'login_face',
+    device_fingerprint VARCHAR(128) NULL,
+    attempts INT NOT NULL DEFAULT 0,
+    consumed TINYINT(1) NOT NULL DEFAULT 0,
+    expires_at DATETIME NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_login_challenges_user (role, user_id)
 );
 
 -- One-time reset codes emailed to workers, organization admins and the owner.

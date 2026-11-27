@@ -24,7 +24,7 @@ loadDotEnv(dirname(__DIR__) . DIRECTORY_SEPARATOR . '.env');
 // the same offset so PHP's date() and MySQL's NOW() never disagree about the time.
 date_default_timezone_set(getenv('APP_TIMEZONE') ?: 'UTC');
 
-const GEOLO_SCHEMA_VERSION = 2026112302;
+const GEOLO_SCHEMA_VERSION = 2026112401;
 
 function envFlagEnabled($name) {
     $value = strtolower(trim((string)(getenv($name) ?: '')));
@@ -549,11 +549,46 @@ function ensureGeoLoSchema($db) {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )");
 
+    // A worker's face is stored as a 128-value embedding computed in the browser by
+    // face-api.js (see frontend/face.js) and sent here as JSON. phash is the retired
+    // 64-bit average hash: kept so rows written by the old scheme still load, but it is
+    // no longer produced and must accept NULL.
     $db->exec("CREATE TABLE IF NOT EXISTS worker_faces (
         id INT AUTO_INCREMENT PRIMARY KEY,
         worker_id INT NOT NULL,
-        phash VARCHAR(128) NOT NULL,
+        phash VARCHAR(128) NULL,
+        descriptor TEXT NULL,
+        engine VARCHAR(32) NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )");
+
+    foreach ([
+        "descriptor TEXT NULL",
+        "engine VARCHAR(32) NULL"
+    ] as $col) {
+        $name = explode(' ', $col)[0];
+        if (!columnExists($db, 'worker_faces', $name)) ensureColumn($db, 'worker_faces', $col);
+    }
+    // Databases created before descriptors existed have phash declared NOT NULL, which
+    // would reject an insert that only carries a descriptor.
+    try { $db->exec("ALTER TABLE worker_faces MODIFY phash VARCHAR(128) NULL"); } catch (Exception $e) {}
+
+    // The step between "credentials accepted" and "session issued". A worker login no
+    // longer returns a session straight away: it returns one of these challenge tokens,
+    // and the session is only created once the face check (enroll on first login, verify
+    // afterwards) passes.
+    $db->exec("CREATE TABLE IF NOT EXISTS login_challenges (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        token_hash VARCHAR(64) NOT NULL UNIQUE,
+        role ENUM('admin','worker') NOT NULL,
+        user_id INT NOT NULL,
+        purpose VARCHAR(24) NOT NULL DEFAULT 'login_face',
+        device_fingerprint VARCHAR(128) NULL,
+        attempts INT NOT NULL DEFAULT 0,
+        consumed TINYINT(1) NOT NULL DEFAULT 0,
+        expires_at DATETIME NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_login_challenges_user (role, user_id)
     )");
 
     $db->exec("CREATE TABLE IF NOT EXISTS punch_attempts (

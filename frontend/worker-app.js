@@ -18,6 +18,7 @@ class WorkerApp {
         this.lastGeofenceLabel = null;
         this.lastGeofenceDistance = null;
         this.faceStream = null;
+        this.faceBusy = false;
         this.pendingAction = null;
         this.summaryChart = null;
         this.init();
@@ -549,9 +550,12 @@ class WorkerApp {
         const video = document.getElementById('faceVideo');
         if (!modal || !video || !navigator.mediaDevices?.getUserMedia) return false;
         try {
-            this.faceStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
+            this.faceStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 } }, audio: false });
             video.srcObject = this.faceStream;
             modal.classList.add('show');
+            // Warm up the face engine and models in the background so the capture below
+            // does not have to wait for them.
+            if (window.GeoFace) GeoFace.ready().catch(() => {});
             return true;
         } catch (e) {
             this.showMessage('Camera unavailable. Checking in without a new face capture.', 'error');
@@ -571,29 +575,39 @@ class WorkerApp {
         if (cancel) this.pendingAction = null;
     }
 
-    confirmFace() {
+    // Captures the current frame, turns it into a face embedding on the device and sends
+    // only that. The photo itself never leaves the browser.
+    async confirmFace() {
         const video = document.getElementById('faceVideo');
         const canvas = document.getElementById('faceCanvas');
-        if (!video || !canvas) return;
+        if (!video || !canvas || this.faceBusy) return;
         const srcW = video.videoWidth;
         const srcH = video.videoHeight;
         if (!srcW || !srcH) {
             this.showMessage('Camera is still starting. Wait a moment, then capture again.', 'error');
             return;
         }
-        const maxW = 240;
-        const scale = Math.min(1, maxW / srcW);
-        canvas.width = Math.max(80, Math.round(srcW * scale));
-        canvas.height = Math.max(80, Math.round(srcH * scale));
-        canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
-        const image = canvas.toDataURL('image/jpeg', 0.5);
         const action = this.pendingAction || 'checkin';
+        this.faceBusy = true;
+        const btn = document.getElementById('captureFaceBtn');
+        GeoSession.setButtonLoading(btn, true);
+        canvas.width = srcW;
+        canvas.height = srcH;
+        canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+        this.showMessage('Reading your face…', 'success');
+        const read = await GeoFace.describe(canvas);
+        this.faceBusy = false;
+        GeoSession.setButtonLoading(btn, false);
+        if (!read.ok) {
+            this.showMessage(GeoFace.failureMessage(read.reason), 'error');
+            return;
+        }
         this.closeFaceModal(false);
         this.showMessage('Sending check-in…', 'success');
-        this.submitPunch(action, image);
+        this.submitPunch(action, read.descriptor);
     }
 
-    async submitPunch(action, image) {
+    async submitPunch(action, descriptor) {
         const btn = document.getElementById(action === 'checkout' ? 'checkoutBtn' : 'checkinBtn');
         GeoSession.setButtonLoading(btn, true);
         try {
@@ -605,7 +619,7 @@ class WorkerApp {
                 accuracy: this.currentAccuracy,
                 device_fingerprint: fingerprint
             };
-            if (image) body.image = image;
+            if (descriptor) body.descriptor = descriptor;
             const response = await fetch(`${this.baseUrl}/attendance.php`, {
                 method: 'POST',
                 headers: this.headers(),
@@ -615,7 +629,7 @@ class WorkerApp {
             const raw = await response.text();
             let result = {};
             try { result = raw ? JSON.parse(raw) : {}; } catch (e) {
-                this.showMessage('The server could not process the photo. Try again.', 'error');
+                this.showMessage('The server could not process the face data. Try again.', 'error');
                 if (action === 'checkin') {
                     this.pendingAction = 'checkin';
                     await this.openFaceModal();

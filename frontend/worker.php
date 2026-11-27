@@ -31,7 +31,7 @@ if (!$worker) {
     header('Location: login.html?denied=1', true, 302);
     exit;
 }
-$worker['has_face'] = getEnrolledFaceHash($db, $worker['id']) ? true : false;
+$worker['has_face'] = workerHasFace($db, $worker['id']);
 
 header('Content-Type: text/html; charset=UTF-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');

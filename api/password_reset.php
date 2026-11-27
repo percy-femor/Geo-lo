@@ -12,13 +12,38 @@ const RESET_MAX_ATTEMPTS = 5;
 
 /**
  * Which account owns this email? Workers and admins live in separate tables, so
- * the match decides which portal the reset belongs to. Admins can have a
- * separate recovery inbox (the owner signs in as boss@geo-lo, which is not a
- * real mailbox).
+ * the match decides which portal the reset belongs to.
+ *
+ * A worker's email is only unique inside an organization, so when the caller
+ * supplies the organization name it pins the worker down unambiguously. Without
+ * it, a bare email that matches workers in several organizations is refused.
+ *
+ * Admins can have a separate recovery inbox (the owner signs in as boss@geo-lo,
+ * which is not a real mailbox).
  */
-function findResetAccount($db, $email) {
+function findResetAccount($db, $email, $organization = '') {
     $email = trim((string)$email);
     if ($email === '') return null;
+
+    $organization = trim((string)$organization);
+    if ($organization !== '') {
+        $orgStmt = $db->prepare("SELECT id FROM organizations WHERE LOWER(name) = LOWER(?) OR LOWER(slug) = LOWER(?) LIMIT 1");
+        $orgStmt->execute([$organization, $organization]);
+        $org = $orgStmt->fetch(PDO::FETCH_ASSOC);
+        if ($org) {
+            $stmt = $db->prepare("SELECT id, name, email FROM workers WHERE LOWER(email) = LOWER(?) AND organization_id = ? AND COALESCE(is_active, 1) = 1 LIMIT 1");
+            $stmt->execute([$email, $org['id']]);
+            $worker = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($worker) {
+                return [
+                    'type' => 'worker',
+                    'id' => (int)$worker['id'],
+                    'name' => $worker['name'],
+                    'deliver_to' => $worker['email'],
+                ];
+            }
+        }
+    }
 
     // Worker emails are unique per organization, so one address can belong to workers
     // in different organizations. A bare email no longer identifies a single account,
@@ -88,17 +113,20 @@ try {
     $data = getJsonInput() ?: [];
     $action = $data['action'] ?? '';
     $email = trim((string)($data['email'] ?? ''));
+    // Workers type their organization to tell apart an email shared across
+    // organizations; admins and the owner leave it blank.
+    $organization = trim((string)($data['organization'] ?? ''));
 
     if ($action === 'request') {
         if ($email === '') {
             sendResponse(["error" => "Email required"], 400);
         }
-        $account = findResetAccount($db, $email);
+        $account = findResetAccount($db, $email, $organization);
         if (!$account) {
             sendResponse(["error" => "We could not find an account with that email."], 404);
         }
         if (!empty($account['ambiguous'])) {
-            sendResponse(["error" => "That email belongs to workers in more than one organization. Ask your admin to reset it."], 409);
+            sendResponse(["error" => "That email belongs to workers in more than one organization. Add your organization above to continue."], 409);
         }
 
         // Only the newest code should work, so retire any earlier one.
@@ -129,12 +157,12 @@ try {
         if ($email === '' || $code === '' || $newPassword === '') {
             sendResponse(["error" => "Email, code and a new password are required"], 400);
         }
-        $account = findResetAccount($db, $email);
+        $account = findResetAccount($db, $email, $organization);
         if (!$account) {
             sendResponse(["error" => "We could not find an account with that email."], 404);
         }
         if (!empty($account['ambiguous'])) {
-            sendResponse(["error" => "That email belongs to workers in more than one organization. Ask your admin to reset it."], 409);
+            sendResponse(["error" => "That email belongs to workers in more than one organization. Add your organization above to continue."], 409);
         }
 
         $minLength = $account['type'] === 'admin' ? 8 : 6;

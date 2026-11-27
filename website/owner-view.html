@@ -774,6 +774,34 @@
         </div>
     </div>
 
+    <div class="modal-backdrop" id="editOrgModal" role="dialog" aria-modal="true">
+        <div class="modal">
+            <h3>Edit organization</h3>
+            <p>Update this company's details. Suspend it separately to lock out its admins and workers.</p>
+            <input type="hidden" id="editOrgId">
+            <div class="form-group">
+                <label for="editOrgName">Organization name</label>
+                <input type="text" id="editOrgName">
+            </div>
+            <div class="form-group">
+                <label for="editOrgEmail">Contact email</label>
+                <input type="email" id="editOrgEmail">
+            </div>
+            <div class="form-group">
+                <label for="editOrgPhone">Phone</label>
+                <input type="text" id="editOrgPhone">
+            </div>
+            <div class="form-group">
+                <label for="editOrgNotes">Notes</label>
+                <input type="text" id="editOrgNotes">
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-ghost" type="button" id="editOrgCancel">Cancel</button>
+                <button class="btn btn-primary" type="button" id="editOrgSave">Save</button>
+            </div>
+        </div>
+    </div>
+
     <div class="modal-backdrop" id="passwordModal" role="dialog" aria-modal="true">
         <div class="modal">
             <h3>Change your password</h3>
@@ -807,6 +835,6 @@
         </div>
     </div>
 
-    <script src="owner-dashboard.js?v=20261107a"></script>
+    <script src="owner-dashboard.js?v=20261124a"></script>
 </body>
 </html>

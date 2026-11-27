@@ -88,6 +88,52 @@ function assertLoginAllowed($db, $scope, $identifier) {
     }
 }
 
+/**
+ * The face step of a worker login.
+ *
+ * A correct PIN no longer hands back a session on its own. Login returns a one-time
+ * challenge token instead, and face.php exchanges it for the session only after the
+ * worker's face is enrolled (the very first login after an admin adds them) or matched
+ * against the face already on file. Challenges expire quickly and die after a few
+ * failed face attempts so the challenge cannot be brute-forced.
+ */
+const LOGIN_CHALLENGE_TTL_SECONDS = 600;
+const LOGIN_CHALLENGE_MAX_ATTEMPTS = 5;
+
+function createLoginChallenge($db, $role, $userId, $fingerprint = null) {
+    $raw = bin2hex(random_bytes(32));
+    $hash = hash('sha256', $raw);
+    $expires = date('Y-m-d H:i:s', time() + LOGIN_CHALLENGE_TTL_SECONDS);
+    // Housekeeping: spent and stale challenges are worthless, so clear them out.
+    try {
+        $db->prepare("DELETE FROM login_challenges WHERE expires_at < NOW() OR consumed = 1")->execute();
+    } catch (Exception $e) {}
+    $stmt = $db->prepare("INSERT INTO login_challenges (token_hash, role, user_id, purpose, device_fingerprint, expires_at) VALUES (?, ?, ?, 'login_face', ?, ?)");
+    $stmt->execute([$hash, $role, (int)$userId, $fingerprint, $expires]);
+    return $raw;
+}
+
+function findLoginChallenge($db, $raw, $role = 'worker') {
+    if (!$raw) return null;
+    $stmt = $db->prepare("SELECT * FROM login_challenges WHERE token_hash = ? AND role = ? AND consumed = 0 AND expires_at > NOW() LIMIT 1");
+    $stmt->execute([hash('sha256', (string)$raw), $role]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    return $row ?: null;
+}
+
+// Count a failed face attempt; returns true when the challenge is now burned.
+function failLoginChallenge($db, $challenge) {
+    $attempts = (int)$challenge['attempts'] + 1;
+    $burned = $attempts >= LOGIN_CHALLENGE_MAX_ATTEMPTS;
+    $db->prepare("UPDATE login_challenges SET attempts = ?, consumed = ? WHERE id = ?")
+        ->execute([$attempts, $burned ? 1 : 0, (int)$challenge['id']]);
+    return $burned;
+}
+
+function consumeLoginChallenge($db, $challengeId) {
+    $db->prepare("UPDATE login_challenges SET consumed = 1 WHERE id = ?")->execute([(int)$challengeId]);
+}
+
 function serveHtmlWithBoot($file, $boot) {
     $html = file_get_contents($file);
     if ($html === false) {

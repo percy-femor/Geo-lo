@@ -18,12 +18,18 @@ try {
                 sendResponse($me ? [$me] : []);
             }
             $session = requireOrgAdmin($db);
-            $stmt = $db->prepare("SELECT w.id, w.employee_id, w.name, w.email, w.phone, w.is_active, w.created_at, w.shift_id, w.device_bound, w.require_face, s.name AS shift_name
+            $stmt = $db->prepare("SELECT w.id, w.employee_id, w.name, w.email, w.phone, w.is_active, w.created_at, w.shift_id, w.device_bound, w.require_face, s.name AS shift_name,
+                    EXISTS(SELECT 1 FROM worker_faces f WHERE f.worker_id = w.id AND f.descriptor IS NOT NULL) AS has_face
                 FROM workers w LEFT JOIN shifts s ON s.id = w.shift_id
                 WHERE COALESCE(w.is_active, 1) = 1 AND w.organization_id = ?
                 ORDER BY w.name");
             $stmt->execute([orgId($session)]);
-            sendResponse($stmt->fetchAll(PDO::FETCH_ASSOC));
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($rows as &$row) {
+                $row['has_face'] = (int)$row['has_face'] === 1;
+            }
+            unset($row);
+            sendResponse($rows);
 
         case 'POST':
             $session = requireOrgAdmin($db);

@@ -1,146 +1,107 @@
 <?php
 
-function gdAvailable() {
-    return function_exists('imagecreatefromstring') && function_exists('imagecreatetruecolor');
+/**
+ * Face matching.
+ *
+ * The browser (frontend/face.js, using face-api.js) finds the face in the camera
+ * frame, aligns it and turns it into a 128-value embedding, then posts that embedding
+ * here. Two shots of the same face land close together in Euclidean space; two
+ * different faces land far apart. That is the whole comparison — no image ever reaches
+ * the server, which is why this works far better than hashing the raw pixels did.
+ *
+ * FACE_MATCH_THRESHOLD is the well-known balanced cut-off for this model: strict
+ * enough to reject a different person, tolerant of lighting and slight angle changes.
+ */
+const FACE_DESCRIPTOR_LENGTH = 128;
+const FACE_MATCH_THRESHOLD = 0.5;
+const FACE_ENGINE = 'face-api-128';
+
+/**
+ * Accept a descriptor as a JSON string or a decoded array and return it as a clean
+ * list of 128 floats, or null when it is missing, the wrong length or not numeric.
+ */
+function normalizeFaceDescriptor($value) {
+    if (is_string($value)) {
+        $decoded = json_decode($value, true);
+        $value = is_array($decoded) ? $decoded : null;
+    }
+    if (!is_array($value) || count($value) !== FACE_DESCRIPTOR_LENGTH) return null;
+    $out = [];
+    foreach ($value as $v) {
+        if (!is_numeric($v)) return null;
+        $f = (float)$v;
+        if (!is_finite($f)) return null;
+        $out[] = $f;
+    }
+    return $out;
 }
 
-function loadImageFromBase64($base64) {
-    if (!$base64) return null;
-    if (!gdAvailable()) return null;
-    $parts = explode(',', $base64);
-    $data = base64_decode(end($parts));
-    if ($data === false) return null;
-    return @imagecreatefromstring($data);
+function faceDescriptorDistance(array $a, array $b) {
+    $sum = 0.0;
+    $n = min(count($a), count($b));
+    for ($i = 0; $i < $n; $i++) {
+        $d = $a[$i] - $b[$i];
+        $sum += $d * $d;
+    }
+    return sqrt($sum);
 }
 
-function computeAHash($img) {
-    $w = 8;
-    $h = 8;
-    $dst = imagecreatetruecolor($w, $h);
-    imagecopyresampled($dst, $img, 0, 0, 0, 0, $w, $h, imagesx($img), imagesy($img));
-    $sum = 0;
-    $vals = [];
-    for ($y = 0; $y < $h; $y++) {
-        for ($x = 0; $x < $w; $x++) {
-            $rgb = imagecolorat($dst, $x, $y);
-            $r = ($rgb >> 16) & 0xFF;
-            $g = ($rgb >> 8) & 0xFF;
-            $b = $rgb & 0xFF;
-            $v = intval(($r + $g + $b) / 3);
-            $vals[] = $v;
-            $sum += $v;
-        }
-    }
-    $avg = $sum / max(1, count($vals));
-    $bits = '';
-    foreach ($vals as $v) {
-        $bits .= ($v >= $avg) ? '1' : '0';
-    }
-    imagedestroy($dst);
-    return $bits;
+// The most recent face on file for a worker, or null when they have none yet.
+function getEnrolledFaceDescriptor($db, $workerId) {
+    $stmt = $db->prepare("SELECT descriptor FROM worker_faces
+        WHERE worker_id = ? AND descriptor IS NOT NULL
+        ORDER BY created_at DESC, id DESC LIMIT 1");
+    $stmt->execute([(int)$workerId]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$row) return null;
+    return normalizeFaceDescriptor($row['descriptor']);
 }
 
-function hammingDistance($a, $b) {
-    $len = min(strlen($a), strlen($b));
-    $d = 0;
-    for ($i = 0; $i < $len; $i++) {
-        if ($a[$i] !== $b[$i]) $d++;
-    }
-    return $d + abs(strlen($a) - strlen($b));
+function workerHasFace($db, $workerId) {
+    $stmt = $db->prepare("SELECT id FROM worker_faces WHERE worker_id = ? AND descriptor IS NOT NULL LIMIT 1");
+    $stmt->execute([(int)$workerId]);
+    return (bool)$stmt->fetch();
 }
 
-function faceImageQuality($img) {
-    $w = imagesx($img);
-    $h = imagesy($img);
-    if ($w < 40 || $h < 40) return 'too_blurry';
-    $stepX = max(1, (int)floor($w / 24));
-    $stepY = max(1, (int)floor($h / 24));
-    $sum = 0;
-    $sumSq = 0;
-    $n = 0;
-    for ($y = 0; $y < $h; $y += $stepY) {
-        for ($x = 0; $x < $w; $x += $stepX) {
-            $rgb = imagecolorat($img, $x, $y);
-            $v = ((($rgb >> 16) & 0xFF) + (($rgb >> 8) & 0xFF) + ($rgb & 0xFF)) / 3;
-            $sum += $v;
-            $sumSq += $v * $v;
-            $n++;
-        }
+// Store a worker's face. Re-enrolling simply adds a newer row; reads always take the
+// latest, so a reset-then-enroll cycle needs no delete.
+function enrollFaceDescriptor($db, $workerId, $descriptor) {
+    $normalized = normalizeFaceDescriptor($descriptor);
+    if ($normalized === null) return 'invalid_face';
+    $stmt = $db->prepare("INSERT INTO worker_faces (worker_id, descriptor, engine) VALUES (?, ?, ?)");
+    $stmt->execute([(int)$workerId, json_encode($normalized), FACE_ENGINE]);
+    return true;
+}
+
+function verifyFaceDescriptor($db, $workerId, $descriptor) {
+    $enrolled = getEnrolledFaceDescriptor($db, $workerId);
+    if (!$enrolled) return ['ok' => false, 'reason' => 'no_face'];
+    $candidate = normalizeFaceDescriptor($descriptor);
+    if ($candidate === null) return ['ok' => false, 'reason' => 'invalid_face'];
+    $distance = faceDescriptorDistance($candidate, $enrolled);
+    if ($distance > FACE_MATCH_THRESHOLD) {
+        return ['ok' => false, 'reason' => 'mismatch', 'distance' => $distance];
     }
-    if ($n < 8) return 'too_blurry';
-    $mean = $sum / $n;
-    $variance = ($sumSq / $n) - ($mean * $mean);
-    if ($mean < 22) return 'too_dark';
-    if ($mean > 242) return 'too_bright';
-    if ($variance < 90) return 'too_blurry';
-    return null;
+    return ['ok' => true, 'distance' => $distance];
+}
+
+function forgetWorkerFaces($db, $workerId) {
+    $db->prepare("DELETE FROM worker_faces WHERE worker_id = ?")->execute([(int)$workerId]);
 }
 
 function faceFailureMessage($reason) {
     switch ($reason) {
-        case 'too_dark':
-            return 'Photo is too dark. Face the camera in better light and try again.';
-        case 'too_bright':
-            return 'Photo is too bright. Avoid strong backlight and try again.';
-        case 'too_blurry':
-            return 'Photo is not clear enough. Hold still, fill the frame with your face, and try again.';
-        case 'invalid_image':
-            return 'Could not read the photo. Try again.';
-        case 'no_gd':
-            return 'Face check is not available on this server. Ask Geo-Lo to enable the PHP GD extension.';
         case 'no_face':
-            return 'Face verification required.';
+        case 'invalid_face':
+            return 'No face detected. Look straight at the camera in good light and keep your whole face in the frame.';
+        case 'multiple_faces':
+            return 'More than one face is visible. Make sure only you are in front of the camera.';
+        case 'model_error':
+            return 'Face recognition could not start on this device. Check your connection and try again.';
+        case 'challenge_expired':
+            return 'This sign-in took too long. Enter your details again.';
         case 'mismatch':
         default:
-            return 'Face did not match. Face the camera in better light and try again.';
+            return 'That face did not match the one on file. Face the camera in good light and try again, or ask your admin to reset your face.';
     }
-}
-
-function getEnrolledFaceHash($db, $workerId) {
-    $stmt = $db->prepare("SELECT phash FROM worker_faces WHERE worker_id = ? ORDER BY created_at DESC LIMIT 1");
-    $stmt->execute([$workerId]);
-    $row = $stmt->fetch(PDO::FETCH_ASSOC);
-    return $row ? $row['phash'] : null;
-}
-
-function verifyFaceImage($db, $workerId, $image) {
-    if (!gdAvailable()) {
-        return ['ok' => false, 'reason' => 'no_gd'];
-    }
-    $enrolled = getEnrolledFaceHash($db, $workerId);
-    if (!$enrolled) {
-        return ['ok' => false, 'reason' => 'no_face'];
-    }
-    $img = loadImageFromBase64($image);
-    if (!$img) {
-        return ['ok' => false, 'reason' => 'invalid_image'];
-    }
-    $quality = faceImageQuality($img);
-    if ($quality) {
-        imagedestroy($img);
-        return ['ok' => false, 'reason' => $quality];
-    }
-    $hash = computeAHash($img);
-    imagedestroy($img);
-    $dist = hammingDistance($hash, $enrolled);
-    if ($dist > 10) {
-        return ['ok' => false, 'reason' => 'mismatch', 'distance' => $dist];
-    }
-    return ['ok' => true, 'distance' => $dist];
-}
-
-function enrollFaceImage($db, $workerId, $image) {
-    if (!gdAvailable()) return 'no_gd';
-    $img = loadImageFromBase64($image);
-    if (!$img) return 'invalid_image';
-    $quality = faceImageQuality($img);
-    if ($quality) {
-        imagedestroy($img);
-        return $quality;
-    }
-    $hash = computeAHash($img);
-    imagedestroy($img);
-    $stmt = $db->prepare("INSERT INTO worker_faces (worker_id, phash) VALUES (?, ?)");
-    $stmt->execute([$workerId, $hash]);
-    return true;
 }

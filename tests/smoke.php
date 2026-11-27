@@ -119,16 +119,22 @@ $r = request('auth.php', 'POST', ['organization' => $orgA, 'email' => $insideEma
 check('correct organization, email and PIN sign in', $r['status'] === 200, "status {$r['status']} {$r['raw']}");
 $insideToken = $r['json']['token'] ?? null;
 
-$r = request('auth.php', 'POST', ['role' => 'admin', 'email' => $adminEmail, 'password' => $adminPass, 'console' => 'org']);
+$r = request('auth.php', 'POST', ['role' => 'admin', 'console' => 'org', 'name' => 'Smoke Admin', 'password' => $adminPass]);
+check('org admin login without an organization is refused', $r['status'] === 400, "status {$r['status']} {$r['raw']}");
+$r = request('auth.php', 'POST', ['role' => 'admin', 'console' => 'org', 'organization' => $orgA, 'name' => 'Nobody Here', 'password' => $adminPass]);
+check('org admin login with an unknown name is refused', $r['status'] === 401, "status {$r['status']} {$r['raw']}");
+$r = request('auth.php', 'POST', ['role' => 'admin', 'console' => 'org', 'organization' => $orgA, 'name' => 'Smoke Admin', 'password' => 'wrong-password']);
+check('org admin login with the wrong password is refused', $r['status'] === 401, "status {$r['status']} {$r['raw']}");
+$r = request('auth.php', 'POST', ['role' => 'admin', 'console' => 'org', 'organization' => $orgA, 'name' => 'Smoke Admin', 'password' => $adminPass]);
 check('organization admin signs in', $r['status'] === 200, "status {$r['status']} {$r['raw']}");
 $adminToken = $r['json']['token'] ?? null;
 
 echo "\n== Failed-login throttling ==\n";
-// A dedicated identifier keeps this from locking out the accounts used above.
-$throttleEmail = "{$mark}_throttle@example.com";
+// A dedicated name keeps this from locking out the accounts used above.
+$throttleName = "{$mark} Throttle";
 $statuses = [];
 for ($i = 0; $i < 6; $i++) {
-    $statuses[] = request('auth.php', 'POST', ['role' => 'admin', 'email' => $throttleEmail, 'password' => 'nope-nope'] + ['console' => 'org'])['status'];
+    $statuses[] = request('auth.php', 'POST', ['role' => 'admin', 'console' => 'org', 'organization' => $orgA, 'name' => $throttleName, 'password' => 'nope-nope'])['status'];
 }
 check('the first five bad attempts are reported as bad credentials', $statuses[4] === 401, implode(',', $statuses));
 check('the sixth attempt is blocked with 429', $statuses[5] === 429, implode(',', $statuses));
@@ -190,9 +196,30 @@ check('new password is stored', password_verify('Reset12345', $hash));
 check('reset ends existing sessions', (int) $db->query("SELECT COUNT(1) FROM sessions WHERE role = 'admin' AND user_id = $adminId")->fetchColumn() === 0);
 $adminToken = null;
 
+// A worker's email is only unique inside an organization, so the same address can
+// sit in two of them. Naming the organization is what tells them apart.
+$db->prepare("INSERT INTO workers (organization_id, employee_id, name, email, pin_hash, is_active) VALUES (?, ?, ?, ?, ?, 1)")
+   ->execute([$orgBId, 'SMK-A2', 'Smoke Worker', $insideEmail, password_hash('2468', PASSWORD_DEFAULT)]);
+$created['workers'][] = (int) $db->lastInsertId();
+
+$r = request('password_reset.php', 'POST', ['action' => 'request', 'email' => $insideEmail]);
+check('a worker email shared across organizations is refused without an organization', $r['status'] === 409, "status {$r['status']} {$r['raw']}");
+$r = request('password_reset.php', 'POST', ['action' => 'request', 'email' => $insideEmail, 'organization' => $orgA]);
+check('naming the organization lets the shared worker email reset', $r['status'] === 200, "status {$r['status']} {$r['raw']}");
+$workerCode = $db->query("SELECT id FROM password_reset_codes WHERE account_type = 'worker' AND account_id = $insideWorkerId AND used = 0 ORDER BY id DESC LIMIT 1")->fetchColumn();
+check('the worker reset code is stored against the right worker', (bool) $workerCode);
+$db->prepare("UPDATE password_reset_codes SET code_hash = ? WHERE id = ?")
+   ->execute([password_hash('246813', PASSWORD_DEFAULT), $workerCode]);
+$r = request('password_reset.php', 'POST', ['action' => 'confirm', 'email' => $insideEmail, 'organization' => $orgA, 'code' => '246813', 'new_password' => '9753']);
+check('the worker reset sets a new PIN', $r['status'] === 200, "status {$r['status']} {$r['raw']}");
+$pinHash = $db->query("SELECT pin_hash FROM workers WHERE id = $insideWorkerId")->fetchColumn();
+check('the new worker PIN is stored', password_verify('9753', $pinHash));
+$r = request('auth.php', 'POST', ['organization' => $orgA, 'email' => $insideEmail, 'pin' => '9753']);
+check('worker signs in with the new PIN', $r['status'] === 200, "status {$r['status']} {$r['raw']}");
+
 echo "\n== Forced password change and team management ==\n";
 $db->prepare("UPDATE admins SET must_change_password = 1 WHERE id = ?")->execute([$adminId]);
-$r = request('auth.php', 'POST', ['role' => 'admin', 'email' => $adminEmail, 'password' => 'Reset12345', 'console' => 'org']);
+$r = request('auth.php', 'POST', ['role' => 'admin', 'console' => 'org', 'organization' => $orgA, 'name' => 'Smoke Admin', 'password' => 'Reset12345']);
 check('admin signs in on an issued password', $r['status'] === 200, "status {$r['status']} {$r['raw']}");
 check('the response asks for a password change', !empty($r['json']['user']['must_change_password']), $r['raw']);
 $adminToken = $r['json']['token'] ?? null;

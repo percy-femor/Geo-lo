@@ -940,8 +940,33 @@
             if (e.key === 'Escape' && !modal.classList.contains('hidden')) closeModal();
         });
 
+        /* ----- Onboarding email availability ----- */
+        // Asks the server whether the typed addresses are still free, so a duplicate
+        // is caught before a payment sheet opens. Returns a message, or null when free.
+        async function onboardingEmailConflicts() {
+            try {
+                const res = await fetch('save-request.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                    body: JSON.stringify({
+                        action: 'check',
+                        contact_email: document.getElementById('contact-email').value.trim(),
+                        admin_email: document.getElementById('admin-email').value.trim()
+                    })
+                });
+                const data = await res.json();
+                if (!res.ok || data.status !== 'success') {
+                    return data.message || 'That email cannot be used. Please check your details.';
+                }
+            } catch (err) {
+                // Server unreachable — let the submit step be the gate.
+                return null;
+            }
+            return null;
+        }
+
         /* ----- Paystack checkout + server-side verification ----- */
-        payBtn.addEventListener('click', () => {
+        payBtn.addEventListener('click', async () => {
             const plan = PLANS[selectedPlan];
             if (!plan || plan.price === 0) return;
 
@@ -960,6 +985,12 @@
             }
             if (!paymentsReady) {
                 setPaymentStatus('Payments are not set up on this site yet. Please contact Geo-Lo to subscribe.', 'error');
+                return;
+            }
+
+            const conflict = await onboardingEmailConflicts();
+            if (conflict) {
+                setPaymentStatus(conflict, 'error');
                 return;
             }
 

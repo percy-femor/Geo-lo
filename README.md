@@ -9,8 +9,9 @@ Geo-Lo is multi-tenant. The **Geo-Lo owner** (super admin) hooks organizations o
 - Super admin console for onboarding organizations and their admins
 - Organization admin console for workers, locations, shifts, and payroll
 - Worker login with organization name, email and PIN, plus device binding
+- Mandatory face recognition: a worker enrolls their face on first sign-in (before any session is issued) and must pass a face match on every subsequent login
 - Geofenced check-in and check-out (both refused outside the work area), with a per-shift cut-off that closes check-in once the day's period has ended, plus GPS accuracy and travel checks
-- Server-side face capture on check-in (when enrolled or required)
+- In-browser face recognition on check-in and login via `face-api.js` (128-D embeddings; only the numeric descriptor reaches the server, never the image)
 - Shifts with lateness, absence, overtime, and grace periods
 - Multiple punches per day, missed-checkout auto-close, manager corrections + audit log
 - Live “who’s at work” dashboard and exception alerts
@@ -49,6 +50,10 @@ database as the app). The Geo-Lo owner opens **Onboarding** in the owner console
 picks a company and registers it — the organization is created with the plan that
 company chose, and the request is linked to the new organization.
 
+The contact and first-admin emails must be free: an address already held by a worker,
+an admin or an earlier onboarding request is refused before the payment sheet opens,
+so the same inbox cannot register twice.
+
 ## Installation
 
 1. Create MySQL database `geo_lo` and import `database/schema.sql` (optional if tables already exist — the API also creates missing tables on first request).
@@ -61,6 +66,9 @@ company chose, and the request is linked to the new organization.
 Workers, organization admins and the owner all reset through the same page
 (`website/reset.html`): enter the account email, receive a 6-digit code by email, then
 choose a new password. Codes last 15 minutes and stop working after 5 wrong guesses.
+A worker's email is only unique inside an organization, so workers also type their
+organization name; without it an email shared by two organizations is refused rather
+than resetting the wrong person. Admins and the owner leave it blank.
 
 `boss@geo-lo` is not a real mailbox, so the owner's codes are sent to
 `OWNER_RECOVERY_EMAIL` instead — set it, otherwise the owner cannot recover the account.
@@ -127,7 +135,7 @@ anything fails.
 ## API notes
 
 All operational endpoints require `Authorization: Bearer <token>` or `X-Auth-Token`.  
-Login: `POST /api/auth.php` (`role: admin` + password, or worker email + organization + PIN).  
+Login: `POST /api/auth.php` (`role: admin` + `console: org` with organization + admin name + password, `console: super` with owner email + password, or worker email + organization + PIN).  
 Organization admins only see data for their `organization_id`.  
 Team: `/api/admins.php` (organization admins manage their own portal users).  
 Password reset: `POST /api/password_reset.php` with `action=request` then `action=confirm`.  

@@ -49,6 +49,11 @@
 
             <div class="step active" id="stepEmail">
                 <div class="group">
+                    <label>Organization</label>
+                    <input type="text" id="organization" placeholder="Workers: your organization" autocomplete="organization">
+                </div>
+                <p class="hint">Workers: enter the organization you belong to. Admins and the owner can leave this blank.</p>
+                <div class="group">
                     <label>Email</label>
                     <input type="email" id="email" placeholder="Enter your account email" autocomplete="username">
                 </div>
@@ -144,6 +149,7 @@
         var endpoint = function () { return GeoSession.apiUrl('password_reset.php'); };
 
         async function requestCode(btn) {
+            var organization = document.getElementById('organization').value.trim();
             var email = document.getElementById('email').value.trim();
             if (!email) { showMsg('Enter your email'); return; }
             GeoSession.setButtonLoading(btn, true);
@@ -151,7 +157,7 @@
                 var res = await fetch(endpoint(), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'request', email: email })
+                    body: JSON.stringify({ action: 'request', email: email, organization: organization })
                 });
                 var j = await res.json();
                 if (!res.ok || j.error) {
@@ -169,6 +175,7 @@
         }
 
         async function confirmReset(btn) {
+            var organization = document.getElementById('organization').value.trim();
             var email = document.getElementById('email').value.trim();
             var code = document.getElementById('code').value.trim();
             var next = document.getElementById('newPassword').value;
@@ -181,7 +188,7 @@
                 var res = await fetch(endpoint(), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'confirm', email: email, code: code, new_password: next })
+                    body: JSON.stringify({ action: 'confirm', email: email, organization: organization, code: code, new_password: next })
                 });
                 var j = await res.json();
                 if (!res.ok || j.error) {

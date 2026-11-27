@@ -289,6 +289,23 @@ try {
                 $planKey = strtolower((string)$data['plan']);
             }
 
+            // Validate the admin account before anything is written, so a taken email
+            // cannot leave an organization behind with no admin.
+            $adminName = trim($data['admin_name'] ?? '') ?: trim((string)($request['admin_name'] ?? ''));
+            $adminEmail = trim($data['admin_email'] ?? '') ?: trim((string)($request['admin_email'] ?? ''));
+            $adminPassword = $data['admin_password'] ?? '';
+            $wantsAdmin = $adminName !== '' && $adminEmail !== '' && $adminPassword !== '';
+            if ($wantsAdmin) {
+                if (!filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
+                    sendResponse(["error" => "Enter a valid admin email"], 400);
+                }
+                $taken = emailTaken($db, $adminEmail);
+                if ($taken) sendResponse(["error" => $taken], 409);
+                if (strlen($adminPassword) < 8) {
+                    sendResponse(["error" => "Password must be at least 8 characters"], 400);
+                }
+            }
+
             $slug = uniqueOrgSlug($db, slugifyOrgName($name));
             $stmt = $db->prepare("INSERT INTO organizations (name, slug, contact_email, phone, notes, plan, plan_name, onboarding_request_id, is_active)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)");
@@ -311,13 +328,7 @@ try {
             }
 
             $adminId = null;
-            $adminName = trim($data['admin_name'] ?? '') ?: trim((string)($request['admin_name'] ?? ''));
-            $adminEmail = trim($data['admin_email'] ?? '') ?: trim((string)($request['admin_email'] ?? ''));
-            $adminPassword = $data['admin_password'] ?? '';
-            if ($adminName && $adminEmail && $adminPassword) {
-                if (!filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
-                    sendResponse(["error" => "Enter a valid admin email"], 400);
-                }
+            if ($wantsAdmin) {
                 $adminId = createOrgAdminAccount($db, $session, $orgId, $adminName, $adminEmail, $adminPassword);
             }
             writeAudit($db, $session, 'create', 'organization', $orgId, [

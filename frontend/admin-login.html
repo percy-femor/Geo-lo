@@ -38,8 +38,9 @@
         </div>
         <div class="content">
             <div id="msg" class="message"></div>
-            <p class="hint">Use the email and password created when your organization was hooked onto Geo-Lo.</p>
-            <input type="email" class="input" id="loginEmail" placeholder="Organization admin email" autocomplete="username" />
+            <p class="hint">Sign in with the organization you belong to, your admin name and your password.</p>
+            <input type="text" class="input" id="loginOrg" placeholder="Organization" autocomplete="organization" />
+            <input type="text" class="input" id="loginName" placeholder="Admin name" autocomplete="name" />
             <div class="input-with-icon">
                 <input type="password" class="input" id="loginPassword" placeholder="Password" autocomplete="current-password" />
                 <button type="button" class="toggle-btn" id="togglePass">👁️</button>
@@ -81,13 +82,15 @@
                 this.textContent = i.type === 'password' ? '👁️' : '🙈';
             });
             document.getElementById('loginBtn').addEventListener('click', login);
+            document.getElementById('loginName').addEventListener('keydown', (e) => { if (e.key === 'Enter') login(); });
             document.getElementById('loginPassword').addEventListener('keydown', (e) => { if (e.key === 'Enter') login(); });
             async function login() {
-                const email = document.getElementById('loginEmail').value.trim();
+                const organization = document.getElementById('loginOrg').value.trim();
+                const name = document.getElementById('loginName').value.trim();
                 const password = document.getElementById('loginPassword').value;
                 const msg = document.getElementById('msg');
                 const btn = document.getElementById('loginBtn');
-                if (!email || !password) { msg.textContent = 'Enter email and password'; msg.className = 'message error'; return; }
+                if (!organization || !name || !password) { msg.textContent = 'Enter organization, admin name and password'; msg.className = 'message error'; return; }
                 GeoSession.setButtonLoading(btn, true);
                 try {
                     const fingerprint = await GeoSession.fingerprint();
@@ -95,7 +98,7 @@
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         credentials: 'include',
-                        body: JSON.stringify({ role: 'admin', console: 'org', email, password, device_fingerprint: fingerprint })
+                        body: JSON.stringify({ role: 'admin', console: 'org', organization, name, password, device_fingerprint: fingerprint })
                     });
                     const j = await res.json();
                     if (!res.ok || j.error || j.role !== 'admin') {

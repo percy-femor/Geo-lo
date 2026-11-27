@@ -1125,7 +1125,7 @@ class AdminDashboard {
         const tbody = document.querySelector('#workersTable tbody');
         if (!tbody) return;
         if (!workers.length) {
-            tbody.innerHTML = `<tr><td colspan="6">${this.emptyState('No workers yet', 'Register a worker to get started.')}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="7">${this.emptyState('No workers yet', 'Register a worker to get started.')}</td></tr>`;
             return;
         }
         tbody.innerHTML = workers.map((worker) => `
@@ -1135,8 +1135,10 @@ class AdminDashboard {
                 <td>${this.escapeHtml(worker.email)}</td>
                 <td>${this.escapeHtml(worker.phone || 'N/A')}</td>
                 <td>${this.escapeHtml(worker.shift_name || '—')}</td>
+                <td>${worker.has_face ? '<span class="badge badge-ok">Set</span>' : '<span class="badge badge-warn">Not set</span>'}</td>
                 <td>
                     <div class="row-actions">
+                        <button class="btn btn-ghost btn-sm" type="button" data-reset-face="${worker.id}">Reset face</button>
                         <button class="btn btn-ghost btn-sm" type="button" data-reset-device="${worker.id}">Reset device</button>
                         <button class="btn btn-danger btn-sm" type="button" data-delete-worker="${worker.id}">Delete</button>
                     </div>
@@ -1148,6 +1150,9 @@ class AdminDashboard {
         });
         tbody.querySelectorAll('[data-reset-device]').forEach((btn) => {
             btn.addEventListener('click', () => this.resetDevice(Number(btn.dataset.resetDevice)));
+        });
+        tbody.querySelectorAll('[data-reset-face]').forEach((btn) => {
+            btn.addEventListener('click', () => this.resetFace(Number(btn.dataset.resetFace)));
         });
     }
 
@@ -1849,6 +1854,18 @@ class AdminDashboard {
         try {
             const result = await this.request('workers.php', { method: 'PUT', body: JSON.stringify({ id: workerId, reset_device: true }) });
             this.toast(result.message || 'Device reset.', 'success');
+        } catch (error) {
+            this.toast(error.message, 'error');
+        }
+    }
+
+    async resetFace(workerId) {
+        const ok = await this.confirmDialog({ title: 'Reset face', message: 'The worker will set up their face again at their next sign-in before they can log in.', confirmText: 'Reset', danger: true });
+        if (!ok) return;
+        try {
+            const result = await this.request('face.php', { method: 'POST', body: JSON.stringify({ action: 'reset', worker_id: workerId }) });
+            this.toast(result.message || 'Face reset.', 'success');
+            this.loadWorkers();
         } catch (error) {
             this.toast(error.message, 'error');
         }

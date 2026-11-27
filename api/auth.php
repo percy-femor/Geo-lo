@@ -30,7 +30,7 @@ try {
         $stmt->execute([$session['user_id']]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$user) sendResponse(["error" => "Worker not found"], 401);
-        $user['has_face'] = getEnrolledFaceHash($db, $user['id']) ? true : false;
+        $user['has_face'] = workerHasFace($db, $user['id']);
         sendResponse(["role" => "worker", "user" => $user]);
     }
 
@@ -45,28 +45,73 @@ try {
         $fingerprint = $data['device_fingerprint'] ?? null;
 
         if ($role === 'admin') {
-            if (empty($data['email']) || empty($data['password'])) {
-                sendResponse(["error" => "Email and password required"], 400);
-            }
-            $adminIdentifier = strtolower(trim((string)$data['email']));
-            assertLoginAllowed($db, 'admin', $adminIdentifier);
-            $stmt = $db->prepare("SELECT id FROM workers WHERE email = ? AND COALESCE(is_active, 1) = 1 LIMIT 1");
-            $stmt->execute([$data['email']]);
-            if ($stmt->fetch()) {
-                sendResponse(["error" => "This is a worker account. Use the worker login."], 403);
-            }
-            $stmt = $db->prepare("SELECT a.id, a.name, a.email, a.password_hash, a.privilege, a.organization_id, a.must_change_password, o.name AS organization_name, o.is_active AS organization_active
-                FROM admins a LEFT JOIN organizations o ON o.id = a.organization_id
-                WHERE LOWER(a.email) = LOWER(?) AND COALESCE(a.is_active, 1) = 1");
-            $stmt->execute([$data['email']]);
-            $admin = $stmt->fetch(PDO::FETCH_ASSOC);
-            if (!$admin || !password_verify($data['password'], $admin['password_hash'])) {
-                recordLoginFailure($db, 'admin', $adminIdentifier);
-                sendResponse(["error" => "Invalid admin credentials"], 401);
-            }
-            clearLoginFailures($db, 'admin', $adminIdentifier);
-            $privilege = normalizeAdminPrivilege($admin['privilege'] ?? 'admin');
             $console = $data['console'] ?? '';
+
+            if ($console === 'org') {
+                // Organization admins sign in with their organization, their own name and
+                // their password. The organization is resolved first, then the name.
+                $orgInput = trim((string)($data['organization'] ?? ''));
+                $nameInput = trim((string)($data['name'] ?? ''));
+                $password = (string)($data['password'] ?? '');
+                if ($orgInput === '' || $nameInput === '' || $password === '') {
+                    sendResponse(["error" => "Organization, name and password required"], 400);
+                }
+                $adminIdentifier = strtolower($orgInput . '|' . $nameInput);
+                assertLoginAllowed($db, 'admin', $adminIdentifier);
+
+                $orgStmt = $db->prepare("SELECT id, is_active FROM organizations WHERE LOWER(name) = LOWER(?) OR LOWER(slug) = LOWER(?) LIMIT 1");
+                $orgStmt->execute([$orgInput, $orgInput]);
+                $org = $orgStmt->fetch(PDO::FETCH_ASSOC);
+                if (!$org) {
+                    recordLoginFailure($db, 'admin', $adminIdentifier);
+                    sendResponse(["error" => "Invalid organization, name or password"], 401);
+                }
+                if ((int)$org['is_active'] !== 1) {
+                    sendResponse(["error" => "This organization is suspended. Contact Geo-Lo."], 403);
+                }
+                // Admin names are not unique, so match every same-named admin in the
+                // organization and let the password decide which account signs in.
+                $stmt = $db->prepare("SELECT a.id, a.name, a.email, a.password_hash, a.privilege, a.organization_id, a.must_change_password, o.name AS organization_name, o.is_active AS organization_active
+                    FROM admins a LEFT JOIN organizations o ON o.id = a.organization_id
+                    WHERE a.organization_id = ? AND LOWER(a.name) = LOWER(?) AND COALESCE(a.is_active, 1) = 1 AND a.privilege <> 'super_admin'");
+                $stmt->execute([$org['id'], $nameInput]);
+                $admin = null;
+                foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $candidate) {
+                    if (password_verify($password, $candidate['password_hash'])) {
+                        $admin = $candidate;
+                        break;
+                    }
+                }
+                if (!$admin) {
+                    recordLoginFailure($db, 'admin', $adminIdentifier);
+                    sendResponse(["error" => "Invalid organization, name or password"], 401);
+                }
+                clearLoginFailures($db, 'admin', $adminIdentifier);
+            } else {
+                // The Geo-Lo owner (console: super) and any legacy caller: email + password.
+                if (empty($data['email']) || empty($data['password'])) {
+                    sendResponse(["error" => "Email and password required"], 400);
+                }
+                $adminIdentifier = strtolower(trim((string)$data['email']));
+                assertLoginAllowed($db, 'admin', $adminIdentifier);
+                $stmt = $db->prepare("SELECT id FROM workers WHERE email = ? AND COALESCE(is_active, 1) = 1 LIMIT 1");
+                $stmt->execute([$data['email']]);
+                if ($stmt->fetch()) {
+                    sendResponse(["error" => "This is a worker account. Use the worker login."], 403);
+                }
+                $stmt = $db->prepare("SELECT a.id, a.name, a.email, a.password_hash, a.privilege, a.organization_id, a.must_change_password, o.name AS organization_name, o.is_active AS organization_active
+                    FROM admins a LEFT JOIN organizations o ON o.id = a.organization_id
+                    WHERE LOWER(a.email) = LOWER(?) AND COALESCE(a.is_active, 1) = 1");
+                $stmt->execute([$data['email']]);
+                $admin = $stmt->fetch(PDO::FETCH_ASSOC);
+                if (!$admin || !password_verify($data['password'], $admin['password_hash'])) {
+                    recordLoginFailure($db, 'admin', $adminIdentifier);
+                    sendResponse(["error" => "Invalid admin credentials"], 401);
+                }
+                clearLoginFailures($db, 'admin', $adminIdentifier);
+            }
+
+            $privilege = normalizeAdminPrivilege($admin['privilege'] ?? 'admin');
             if ($console === 'super' && $privilege !== 'super_admin') {
                 sendResponse(["error" => "This is an organization admin account. Use the organization login."], 403);
             }
@@ -124,27 +169,24 @@ try {
         if ((int)$worker['device_bound'] === 1 && !empty($worker['device_fingerprint']) && $fingerprint && $worker['device_fingerprint'] !== $fingerprint) {
             sendResponse(["error" => "This account is bound to another device. Ask an admin to reset it."], 403);
         }
-        if ((int)$worker['device_bound'] !== 1 && $fingerprint) {
-            $db->prepare("UPDATE workers SET device_fingerprint = ?, device_bound = 1 WHERE id = ?")->execute([$fingerprint, $worker['id']]);
-        }
-        $token = createSession($db, 'worker', $worker['id'], $fingerprint);
-        require_once 'face_lib.php';
-        $hasFace = getEnrolledFaceHash($db, $worker['id']) ? true : false;
+
+        // Correct credentials are only half of a worker login. No session is created
+        // here: the caller gets a one-time challenge instead and face.php turns it into
+        // a session once the face is enrolled (first login after the admin adds them)
+        // or matched against the face already on file. Device binding is applied when
+        // that session is created, not before.
+        $hasFace = workerHasFace($db, $worker['id']);
+        $challenge = createLoginChallenge($db, 'worker', $worker['id'], $fingerprint);
         sendResponse([
-            "token" => $token,
+            "face_required" => true,
+            "mode" => $hasFace ? "verify" : "enroll",
+            "challenge" => $challenge,
             "role" => "worker",
             "id" => $worker['id'],
             "employee_id" => $worker['employee_id'],
             "name" => $worker['name'],
             "email" => $worker['email'],
-            "has_face" => $hasFace,
-            "user" => [
-                "id" => $worker['id'],
-                "employee_id" => $worker['employee_id'],
-                "name" => $worker['name'],
-                "email" => $worker['email'],
-                "has_face" => $hasFace
-            ]
+            "has_face" => $hasFace
         ]);
     }
 

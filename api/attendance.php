@@ -107,25 +107,27 @@ try {
                 ], 400);
             }
 
-            $enrolled = getEnrolledFaceHash($db, $workerId);
-            $mustFace = gdAvailable() && ($enrolled || (int)$worker['require_face'] === 1);
+            $hasFace = workerHasFace($db, $workerId);
+            $mustFace = $hasFace || (int)$worker['require_face'] === 1;
             if ($mustFace) {
-                $image = $data['image'] ?? null;
-                if (!$image) {
+                $descriptor = $data['descriptor'] ?? null;
+                if (!$descriptor) {
                     logPunchAttempt($db, $workerId, 'checkin', $data, false, 'face required');
                     sendResponse(["error" => "Face verification required"], 400);
                 }
-                if ($enrolled) {
-                    $face = verifyFaceImage($db, $workerId, $image);
+                if ($hasFace) {
+                    $face = verifyFaceDescriptor($db, $workerId, $descriptor);
                     if (!$face['ok']) {
                         logPunchAttempt($db, $workerId, 'checkin', $data, false, 'face ' . $face['reason']);
                         createAlert($db, 'face_fail', $worker['name'] . ' failed face verification', $workerId, null);
                         sendResponse(["error" => faceFailureMessage($face['reason'] ?? '')], 400);
                     }
                 } else {
-                    $enrolledOk = enrollFaceImage($db, $workerId, $image);
+                    // Safety net: a face is normally set at login, but an admin may have
+                    // reset it mid-session, so the first punch re-enrols it.
+                    $enrolledOk = enrollFaceDescriptor($db, $workerId, $descriptor);
                     if ($enrolledOk !== true) {
-                        sendResponse(["error" => faceFailureMessage(is_string($enrolledOk) ? $enrolledOk : 'invalid_image')], 400);
+                        sendResponse(["error" => faceFailureMessage(is_string($enrolledOk) ? $enrolledOk : 'invalid_face')], 400);
                     }
                 }
             }

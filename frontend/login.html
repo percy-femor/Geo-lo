@@ -21,21 +21,33 @@
         .input:focus{border-color:var(--primary);outline:none;box-shadow:0 0 0 4px rgba(16,163,74,.15)}
         .btn{width:100%;padding:16px;border:none;border-radius:14px;font-size:16px;font-weight:700;cursor:pointer;transition:.2s;letter-spacing:.4px;background:var(--primary);color:#fff}
         .btn:active{transform:scale(.98)}
+        .btn:disabled{opacity:.55;cursor:not-allowed}
+        .btn.ghost{background:transparent;color:var(--muted);border:2px solid rgba(147,179,165,.25);margin-top:10px}
         .link{margin-top:12px;text-align:center}
         .link a{color:var(--primary);text-decoration:none;font-weight:600}
         .message{padding:14px;border-radius:14px;margin-bottom:18px;text-align:center;display:none;font-weight:600}
         .message.error{background:#f8d7da;color:#721c24;border:1px solid #f5c6cb;display:block}
+        .message.info{background:rgba(16,163,74,.12);color:var(--text);border:1px solid rgba(16,163,74,.3);display:block}
         .input-with-icon{position:relative}
         .input-with-icon input{padding-right:44px}
         .toggle-btn{position:absolute;right:8px;top:50%;transform:translateY(-50%);background:transparent;border:none;cursor:pointer;font-size:1rem;color:var(--muted);padding:6px}
+        .face-stage{background:#000;border-radius:14px;overflow:hidden;margin-bottom:14px}
+        #faceVideo{width:100%;aspect-ratio:4/3;object-fit:cover;display:block;transform:scaleX(-1)}
+        .face-note{color:var(--muted);font-size:13px;margin-bottom:14px;text-align:center}
     </style>
     <script src="session.js?v=20261107a"></script>
+    <script src="face.js?v=20261124a"></script>
     <script>
         (function(){
             const d=localStorage.getItem('geo_theme')||'light';
             document.body?.classList?.toggle('light', d==='light');
             localStorage.removeItem('authWorker');
         })();
+        // Login is two steps. Credentials first; then the worker must set up their face
+        // (the very first sign-in after an admin adds them) or have it verified before the
+        // session is granted. FaceState holds the in-progress step.
+        const FaceState = { challenge: null, mode: 'verify', stream: null, busy: false };
+
         window.addEventListener('DOMContentLoaded',function(){
             const forgot=document.getElementById('forgotLink');
             if(forgot)forgot.setAttribute('href',GeoSession.siteUrl('reset.html'));
@@ -44,21 +56,150 @@
                 if(msg){msg.textContent='Sign in with a worker account to open attendance.';msg.className='message error';}
             }
         });
+
+        function credMsg(text,type){
+            const msg=document.getElementById('msg');
+            if(!msg)return;
+            msg.textContent=text||'';
+            msg.className='message '+(type||'error');
+        }
+        function faceMsg(text,type){
+            const msg=document.getElementById('faceMsg');
+            if(!msg)return;
+            msg.textContent=text||'';
+            msg.className='message '+(type||'error');
+        }
+
         async function login(btn){
             const organization=document.getElementById('loginOrg').value.trim();
             const email=document.getElementById('loginEmail').value.trim();
             const pin=document.getElementById('loginPin').value.trim();
-            const msg=document.getElementById('msg');
-            if(!organization||!email||!pin){msg.textContent='Enter organization, email and PIN';msg.className='message error';return}
+            if(!organization||!email||!pin){credMsg('Enter organization, email and PIN');return}
             if(btn)GeoSession.setButtonLoading(btn,true);
             try{
                 const fingerprint=await GeoSession.fingerprint();
                 const res=await fetch(GeoSession.apiUrl('auth.php'),{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({organization,email,pin,device_fingerprint:fingerprint})});
-                const j=await res.json();
-                if(!res.ok||j.error){msg.textContent=j.error||'Invalid credentials';msg.className='message error';if(btn)GeoSession.setButtonLoading(btn,false);return}
+                const j=await res.json().catch(()=>({}));
+                if(!res.ok||j.error){credMsg(j.error||'Invalid credentials');if(btn)GeoSession.setButtonLoading(btn,false);return}
+                if(j.face_required){await startFaceStep(j);return}
+                // No face step required (should not happen for workers): sign in as before.
                 GeoSession.set(j.token,'worker',j.user||j);
                 window.location.href='worker.php';
-            }catch(e){msg.textContent='Network error';msg.className='message error';if(btn)GeoSession.setButtonLoading(btn,false)}
+            }catch(e){credMsg('Network error');if(btn)GeoSession.setButtonLoading(btn,false)}
+        }
+
+        async function startFaceStep(payload){
+            FaceState.challenge=payload.challenge;
+            FaceState.mode=payload.mode==='enroll'?'enroll':'verify';
+            const first=!!payload.name?payload.name.split(' ')[0]:'';
+            document.getElementById('credsStep').style.display='none';
+            document.getElementById('faceStep').style.display='block';
+            document.getElementById('headerSub').textContent=FaceState.mode==='enroll'
+                ? 'Set up your face to finish signing in'
+                : 'Verify your face to finish signing in';
+            faceMsg(FaceState.mode==='enroll'
+                ? (first?('Hi '+first+' — this is your first sign-in. ') : 'This is your first sign-in. ')+'Look straight at the camera, then tap “Capture & continue”. This face will be used for every future sign-in.'
+                : 'Look straight at the camera in good light, then tap “Capture & continue”.','info');
+            const btn=document.getElementById('faceBtn');
+            btn.disabled=true;
+            btn.textContent=FaceState.mode==='enroll'?'Capture & continue':'Capture & verify';
+            try{
+                await GeoFace.ready();
+            }catch(e){
+                faceMsg(GeoFace.failureMessage('model_error'),'error');
+                btn.disabled=false;
+                btn.textContent='Retry';
+                return;
+            }
+            const ok=await openCamera();
+            if(ok)btn.disabled=false;
+        }
+
+        async function openCamera(){
+            const video=document.getElementById('faceVideo');
+            if(!navigator.mediaDevices?.getUserMedia){faceMsg('This browser cannot open the camera.','error');return false}
+            try{
+                FaceState.stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:640}},audio:false});
+                video.srcObject=FaceState.stream;
+                await video.play().catch(()=>{});
+                return true;
+            }catch(e){
+                faceMsg('Camera is blocked or unavailable. Allow camera access for this site, then try again.','error');
+                return false;
+            }
+        }
+
+        function stopCamera(){
+            if(FaceState.stream){
+                FaceState.stream.getTracks().forEach((t)=>t.stop());
+                FaceState.stream=null;
+            }
+            const video=document.getElementById('faceVideo');
+            if(video)video.srcObject=null;
+        }
+
+        async function captureFace(btn){
+            if(FaceState.busy)return;
+            const video=document.getElementById('faceVideo');
+            const canvas=document.getElementById('faceCanvas');
+            if(!video||!canvas)return;
+            if(!video.videoWidth){faceMsg('Camera is still starting. Wait a moment, then capture again.','error');return}
+            canvas.width=video.videoWidth;
+            canvas.height=video.videoHeight;
+            canvas.getContext('2d').drawImage(video,0,0,canvas.width,canvas.height);
+            FaceState.busy=true;
+            if(btn)GeoSession.setButtonLoading(btn,true);
+            faceMsg('Reading your face…','info');
+            const read=await GeoFace.describe(canvas);
+            if(!read.ok){
+                FaceState.busy=false;
+                if(btn)GeoSession.setButtonLoading(btn,false);
+                faceMsg(GeoFace.failureMessage(read.reason),'error');
+                return;
+            }
+            faceMsg('Checking with the server…','info');
+            await submitFace(read.descriptor,btn);
+        }
+
+        async function submitFace(descriptor,btn){
+            const action=FaceState.mode==='enroll'?'login_enroll':'login_verify';
+            try{
+                const res=await fetch(GeoSession.apiUrl('face.php'),{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({action,challenge:FaceState.challenge,descriptor})});
+                const j=await res.json().catch(()=>({}));
+                if(res.ok&&j.token){
+                    stopCamera();
+                    GeoSession.set(j.token,'worker',j.user||j);
+                    window.location.href='worker.php';
+                    return;
+                }
+                // The face was cleared between the two steps: switch to enrolling it now.
+                if(j&&j.mode==='enroll'){
+                    FaceState.mode='enroll';
+                    FaceState.busy=false;
+                    if(btn){GeoSession.setButtonLoading(btn,false);btn.textContent='Capture & continue';}
+                    faceMsg('Your face is not on file yet. Set it up now.','info');
+                    return;
+                }
+                FaceState.busy=false;
+                if(btn)GeoSession.setButtonLoading(btn,false);
+                const extra=(typeof j.attempts_left==='number'&&j.attempts_left>0)?(' You have '+j.attempts_left+' attempt(s) left.'):'';
+                faceMsg((j.error||'Face check failed')+extra,'error');
+                if(j.challenge_expired){setTimeout(()=>window.location.reload(),1800);}
+            }catch(e){
+                FaceState.busy=false;
+                if(btn)GeoSession.setButtonLoading(btn,false);
+                faceMsg('Network error while checking your face. Try again.','error');
+            }
+        }
+
+        function cancelFaceStep(){
+            stopCamera();
+            FaceState.challenge=null;
+            FaceState.busy=false;
+            document.getElementById('faceStep').style.display='none';
+            document.getElementById('credsStep').style.display='block';
+            document.getElementById('headerSub').textContent='Access your attendance';
+            faceMsg('');
         }
     </script>
     </head>
@@ -66,18 +207,28 @@
     <div class="container">
         <div class="header">
             <h1>Geo-Lo Login</h1>
-            <p>Access your attendance</p>
+            <p id="headerSub">Access your attendance</p>
         </div>
         <div class="content">
-            <div id="msg" class="message"></div>
-            <input type="text" class="input" id="loginOrg" placeholder="Organization" autocomplete="organization" />
-            <input type="email" class="input" id="loginEmail" placeholder="Email" />
-            <div class="input-with-icon">
-                <input type="password" class="input" id="loginPin" placeholder="PIN" />
-                <button type="button" class="toggle-btn" onclick="(function(el){var i=document.getElementById('loginPin');if(!i)return;var s=i.getAttribute('type')==='password';i.setAttribute('type', s?'text':'password');el.textContent=s?'🙈':'👁️';})(this)">👁️</button>
+            <div id="credsStep">
+                <div id="msg" class="message"></div>
+                <input type="text" class="input" id="loginOrg" placeholder="Organization" autocomplete="organization" />
+                <input type="email" class="input" id="loginEmail" placeholder="Email" />
+                <div class="input-with-icon">
+                    <input type="password" class="input" id="loginPin" placeholder="PIN" />
+                    <button type="button" class="toggle-btn" onclick="(function(el){var i=document.getElementById('loginPin');if(!i)return;var s=i.getAttribute('type')==='password';i.setAttribute('type', s?'text':'password');el.textContent=s?'🙈':'👁️';})(this)">👁️</button>
+                </div>
+                <button class="btn" id="loginBtn" onclick="login(this)">Login</button>
+                <div class="link"><a href="../website/reset.html" id="forgotLink">Forgot PIN or Password?</a></div>
             </div>
-            <button class="btn" id="loginBtn" onclick="login(this)">Login</button>
-            <div class="link"><a href="../website/reset.html" id="forgotLink">Forgot PIN or Password?</a></div>
+            <div id="faceStep" style="display:none">
+                <div id="faceMsg" class="message"></div>
+                <div class="face-stage"><video id="faceVideo" autoplay playsinline muted></video></div>
+                <canvas id="faceCanvas" hidden></canvas>
+                <p class="face-note">Your photo is read on this device — only the face data is sent.</p>
+                <button class="btn" id="faceBtn" type="button" onclick="captureFace(this)">Capture &amp; continue</button>
+                <button class="btn ghost" id="faceCancelBtn" type="button" onclick="cancelFaceStep()">Cancel</button>
+            </div>
         </div>
     </div>
 </body>

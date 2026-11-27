@@ -18,7 +18,45 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
+/**
+ * Is this address already spoken for? Returns a short reason when it is, or null
+ * when it is free. Workers, admins and earlier onboarding requests all hold an
+ * address, so the same inbox cannot register a second time.
+ */
+function emailConflict(PDO $pdo, string $email): ?string
+{
+    $email = trim($email);
+    if ($email === '') {
+        return null;
+    }
+    if (strtolower($email) === 'boss@geo-lo') {
+        return 'it is reserved for the Geo-Lo owner';
+    }
+
+    $stmt = $pdo->prepare('SELECT id FROM workers WHERE LOWER(email) = LOWER(?) LIMIT 1');
+    $stmt->execute([$email]);
+    if ($stmt->fetch()) {
+        return 'it already belongs to a worker account';
+    }
+
+    $stmt = $pdo->prepare('SELECT id FROM admins WHERE LOWER(email) = LOWER(?) LIMIT 1');
+    $stmt->execute([$email]);
+    if ($stmt->fetch()) {
+        return 'it already belongs to an admin account';
+    }
+
+    $stmt = $pdo->prepare('SELECT id FROM onboarding_requests WHERE LOWER(contact_email) = LOWER(?) OR LOWER(admin_email) = LOWER(?) LIMIT 1');
+    $stmt->execute([$email, $email]);
+    if ($stmt->fetch()) {
+        return 'it is already on an existing onboarding request';
+    }
+
+    return null;
+}
+
 $input = json_decode(file_get_contents('php://input'), true) ?: [];
+
+$action = strtolower(trim((string) ($input['action'] ?? 'submit')));
 
 $organization = trim((string) ($input['organization'] ?? ''));
 $contactEmail = trim((string) ($input['contact_email'] ?? ''));
@@ -37,10 +75,61 @@ if (!isset($PRICES[$planKey])) {
     $planKey = 'free';
 }
 
+// The page asks this before opening the payment sheet, so a duplicate address is
+// caught before a card is charged.
+if ($action === 'check') {
+    try {
+        foreach (['contact' => $contactEmail, 'admin' => $adminEmail] as $label => $value) {
+            if ($value === '') {
+                continue;
+            }
+            if (!filter_var($value, FILTER_VALIDATE_EMAIL)) {
+                http_response_code(422);
+                echo json_encode(['status' => 'error', 'field' => $label, 'message' => "Enter a valid {$label} email."]);
+                exit;
+            }
+            $reason = emailConflict(db(), $value);
+            if ($reason !== null) {
+                http_response_code(409);
+                echo json_encode(['status' => 'error', 'field' => $label, 'message' => "The {$label} email {$value} cannot be used — {$reason}."]);
+                exit;
+            }
+        }
+    } catch (PDOException $e) {
+        // Database unavailable — do not block the visitor; submit reports the failure.
+    }
+    echo json_encode(['status' => 'success']);
+    exit;
+}
+
 if ($organization === '' || !filter_var($contactEmail, FILTER_VALIDATE_EMAIL)) {
     http_response_code(422);
     echo json_encode(['status' => 'error', 'message' => 'A valid organization name and contact email are required.']);
     exit;
+}
+
+if ($adminEmail !== '' && !filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
+    http_response_code(422);
+    echo json_encode(['status' => 'error', 'message' => 'Enter a valid admin email.']);
+    exit;
+}
+
+// A company cannot onboard with an address that already belongs to an account or
+// to an earlier request.
+try {
+    foreach (['contact' => $contactEmail, 'admin' => $adminEmail] as $label => $value) {
+        if ($value === '') {
+            continue;
+        }
+        $reason = emailConflict(db(), $value);
+        if ($reason !== null) {
+            http_response_code(409);
+            echo json_encode(['status' => 'error', 'message' => "The {$label} email {$value} cannot be used — {$reason}."]);
+            exit;
+        }
+    }
+} catch (PDOException $e) {
+    // Database unavailable — fall through; the insert below reports the failure.
 }
 
 $price    = $PRICES[$planKey];

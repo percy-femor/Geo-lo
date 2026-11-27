@@ -130,6 +130,10 @@ class SuperDashboard {
             document.getElementById('editAdminModal')?.classList.remove('show');
         });
         document.getElementById('editAdminSave')?.addEventListener('click', () => this.saveAdminEdit());
+        document.getElementById('editOrgCancel')?.addEventListener('click', () => {
+            document.getElementById('editOrgModal')?.classList.remove('show');
+        });
+        document.getElementById('editOrgSave')?.addEventListener('click', () => this.saveOrgEdit());
         document.getElementById('openPasswordBtn')?.addEventListener('click', () => this.openPasswordModal());
         document.getElementById('passwordCancel')?.addEventListener('click', () => this.closePasswordModal());
         document.getElementById('passwordSave')?.addEventListener('click', () => this.changePassword());
@@ -378,6 +382,7 @@ class SuperDashboard {
                     <td><span class="badge ${active ? 'badge-ok' : 'badge-off'}">${active ? 'Active' : 'Suspended'}</span></td>
                     <td>
                         <div class="row-actions">
+                            <button class="btn btn-ghost btn-sm" type="button" data-edit-org="${o.id}">Edit</button>
                             ${active
                                 ? `<button class="btn btn-danger btn-sm" type="button" data-suspend-org="${o.id}">Suspend</button>`
                                 : `<button class="btn btn-success btn-sm" type="button" data-activate-org="${o.id}">Activate</button>`}
@@ -387,6 +392,9 @@ class SuperDashboard {
                 </tr>
             `;
         }).join('');
+        tbody.querySelectorAll('[data-edit-org]').forEach((btn) => {
+            btn.addEventListener('click', () => this.openEditOrg(Number(btn.dataset.editOrg)));
+        });
         tbody.querySelectorAll('[data-suspend-org]').forEach((btn) => {
             btn.addEventListener('click', () => this.setOrgActive(Number(btn.dataset.suspendOrg), false));
         });
@@ -429,6 +437,50 @@ class SuperDashboard {
             await this.loadOverview();
         } catch (error) {
             this.toast(error.message, 'error', 'Could not hook organization');
+        } finally {
+            this.setButtonLoading(btn, false);
+        }
+    }
+
+    // Edit an organization's own details (name, contact email, phone, notes).
+    // Its plan comes from the onboarding request and is changed elsewhere.
+    openEditOrg(id) {
+        const org = (this.organizations || []).find((o) => Number(o.id) === Number(id));
+        if (!org) return;
+        document.getElementById('editOrgId').value = org.id;
+        document.getElementById('editOrgName').value = org.name || '';
+        document.getElementById('editOrgEmail').value = org.contact_email || '';
+        document.getElementById('editOrgPhone').value = org.phone || '';
+        document.getElementById('editOrgNotes').value = org.notes || '';
+        document.getElementById('editOrgModal')?.classList.add('show');
+    }
+
+    async saveOrgEdit() {
+        const id = Number(document.getElementById('editOrgId')?.value);
+        const name = document.getElementById('editOrgName')?.value.trim();
+        if (!name) {
+            this.toast('Organization name cannot be empty.', 'warning');
+            return;
+        }
+        const btn = document.getElementById('editOrgSave');
+        this.setButtonLoading(btn, true, 'Saving…');
+        try {
+            const result = await this.request('super.php', {
+                method: 'PUT',
+                body: JSON.stringify({
+                    action: 'update_organization',
+                    id,
+                    name,
+                    contact_email: document.getElementById('editOrgEmail')?.value.trim(),
+                    phone: document.getElementById('editOrgPhone')?.value.trim(),
+                    notes: document.getElementById('editOrgNotes')?.value.trim()
+                })
+            });
+            document.getElementById('editOrgModal')?.classList.remove('show');
+            this.toast(result.message || 'Organization updated.', 'success');
+            await this.loadOrganizations();
+        } catch (error) {
+            this.toast(error.message, 'error');
         } finally {
             this.setButtonLoading(btn, false);
         }
